@@ -1,0 +1,83 @@
+package service
+
+import (
+	"errors"
+
+	"golang.org/x/crypto/bcrypt"
+
+	"jdShopServer/config"
+	"jdShopServer/internal/model"
+	"jdShopServer/internal/repository"
+)
+
+var (
+	ErrWrongPassword = errors.New("wrong password")
+	ErrUserNotFound  = errors.New("user not found")
+)
+
+type UserService struct {
+	userRepo  *repository.UserRepo
+	tokenRepo *repository.TokenRepo
+	cfg       config.AuthConfig
+}
+
+func NewUserService(userRepo *repository.UserRepo, tokenRepo *repository.TokenRepo, cfg config.AuthConfig) *UserService {
+	return &UserService{userRepo: userRepo, tokenRepo: tokenRepo, cfg: cfg}
+}
+
+func (s *UserService) GetProfile(userID int64) (*model.User, error) {
+	user, err := s.userRepo.FindByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+	return user, nil
+}
+
+func (s *UserService) UpdateProfile(userID int64, req model.UpdateProfileRequest) (*model.User, error) {
+	var nickname, email, avatarURL *string
+	if req.Nickname != "" {
+		nickname = &req.Nickname
+	}
+	if req.Email != "" {
+		email = &req.Email
+	}
+	if req.AvatarURL != "" {
+		avatarURL = &req.AvatarURL
+	}
+
+	if err := s.userRepo.UpdateProfile(userID, nickname, email, avatarURL); err != nil {
+		return nil, err
+	}
+	return s.userRepo.FindByID(userID)
+}
+
+func (s *UserService) ChangePassword(userID int64, req model.ChangePasswordRequest) error {
+	user, err := s.userRepo.FindByID(userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return ErrUserNotFound
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
+		return ErrWrongPassword
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), s.cfg.BcryptCost)
+	if err != nil {
+		return err
+	}
+
+	if err := s.userRepo.UpdatePassword(userID, string(hash)); err != nil {
+		return err
+	}
+
+	// Revoke all refresh tokens on password change
+	s.tokenRepo.RevokeAllForUser(userID)
+
+	return nil
+}

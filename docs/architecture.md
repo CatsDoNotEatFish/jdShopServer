@@ -1,0 +1,171 @@
+# 架构设计
+
+## 部署架构
+
+```text
+Client (jdShop 桌面端)
+       ↓ HTTPS (443)
+Nginx (反向代理 + 限流 + gzip)
+       ↓ HTTP (127.0.0.1:8080)
+Go 应用 (Chi Router, 单一二进制, 17MB)
+       ↓
+SQLite 文件 (WAL 模式, data/app.db)
+```
+
+## 进程职责
+
+### Nginx
+
+- HTTPS 终止（Let's Encrypt 证书自动续期）
+- `limit_req` 对 API 限流（30 req/min），登录接口额外限制（5 req/min）
+- gzip 压缩 JSON 响应，降低带宽
+- 反向代理到 Go 应用，传递 `X-Real-IP`、`X-Forwarded-For`
+
+### Go 应用
+
+- 所有 API 业务逻辑
+- JWT (HS256) 鉴权与 RBAC 权限校验
+- SQLite 数据库读写（WAL 模式、纯 Go 驱动、无 CGO）
+- 启动时自动执行数据库迁移
+
+## 分层架构
+
+```text
+┌─────────────────────────────────────────┐
+│  Handler (internal/handler/)            │  ← HTTP 请求解析、参数校验、响应序列化
+│  - auth.go      register/login/refresh  │
+│  - user.go      profile/password        │
+│  - announcement.go  CRUD + publish      │
+│  - version.go   CRUD + check latest     │
+│  - heartbeat.go heartbeat report        │
+│  - admin.go     users/roles management  │
+│  - health.go    health check            │
+├─────────────────────────────────────────┤
+│  Middleware (internal/middleware/)       │  ← 请求预处理
+│  - auth.go      JWT 解析, context 注入  │
+│  - rbac.go      RequireRole 中间件      │
+│  - logger.go    method/path/status/dur  │
+│  - ratelimit.go 令牌桶 IP 限流          │
+├─────────────────────────────────────────┤
+│  Service (internal/service/)            │  ← 业务逻辑
+│  - auth.go      注册/登录/Token刷新     │
+│  - user.go      个人资料/密码修改       │
+│  - announcement.go  公告业务            │
+│  - version.go   版本管理/更新检查       │
+│  - heartbeat.go 心跳+版本提醒           │
+│  - admin.go     用户/角色管理           │
+├─────────────────────────────────────────┤
+│  Repository (internal/repository/)      │  ← SQL 数据访问
+│  - db.go        数据库打开+迁移执行     │
+│  - user.go      用户 CRUD + 角色查询    │
+│  - role.go      角色 CRUD + 权限        │
+│  - token.go     Refresh Token 管理      │
+│  - announcement.go  公告 CRUD           │
+│  - version.go   版本 CRUD + 最新查询    │
+│  - heartbeat.go  心跳写入               │
+│  - login_log.go  登录日志+失败计数      │
+├─────────────────────────────────────────┤
+│  SQLite (WAL, modernc.org/sqlite)       │
+└─────────────────────────────────────────┘
+```
+
+调用方向: Handler → Service → Repository → SQLite。不允许跨层调用。
+
+## 项目文件结构
+
+```text
+jdShopServer/
+├── main.go                     # 入口: migrate / serve / version 三个子命令
+├── config.yaml                 # 默认配置文件
+├── config/
+│   └── config.go               # 配置结构体 + YAML 加载 + 环境变量覆盖
+├── internal/
+│   ├── handler/                # HTTP 处理层（8 个文件）
+│   │   ├── response.go         # 统一响应函数（respondOK/Error/Paginated）
+│   │   ├── auth.go
+│   │   ├── user.go
+│   │   ├── announcement.go
+│   │   ├── version.go
+│   │   ├── heartbeat.go
+│   │   ├── admin.go
+│   │   └── health.go
+│   ├── service/                # 业务逻辑层（6 个文件）
+│   │   ├── auth.go
+│   │   ├── user.go
+│   │   ├── announcement.go
+│   │   ├── version.go
+│   │   ├── heartbeat.go
+│   │   └── admin.go
+│   ├── repository/             # 数据访问层（8 个文件）
+│   │   ├── db.go
+│   │   ├── user.go
+│   │   ├── role.go
+│   │   ├── token.go
+│   │   ├── announcement.go
+│   │   ├── version.go
+│   │   ├── heartbeat.go
+│   │   └── login_log.go
+│   ├── middleware/             # 中间件（4 个文件）
+│   │   ├── auth.go             # JWT 解析
+│   │   ├── rbac.go             # 角色检查
+│   │   ├── logger.go           # 请求日志
+│   │   └── ratelimit.go        # IP 限流
+│   ├── model/
+│   │   └── models.go           # 所有数据结构、请求/响应类型、校验方法
+│   └── router/
+│       └── router.go           # 路由注册 + 依赖注入
+├── migrations/
+│   └── 001_init.sql            # 初始数据库迁移
+├── deploy/
+│   ├── nginx.conf
+│   ├── jdshop.service
+│   ├── deploy.sh
+│   └── backup.sh
+├── docs/                       # 项目文档
+│   ├── README.md               # 导航
+│   ├── architecture.md         # 本文件
+│   ├── database-schema.md      # 表设计
+│   ├── api-reference.md        # API 接口参考
+│   ├── auth-design.md          # 鉴权设计
+│   ├── deployment.md           # 部署指南
+│   ├── development.md          # 开发指南
+│   └── operations/             # 操作日志
+├── data/                       # 运行时数据（.gitignore）
+│   └── app.db
+└── .gitignore
+```
+
+## 关键设计决策
+
+### 为什么不用 ORM
+
+手写 SQL 对于 SQLite 这种简单场景更透明。SQL 语句在 Repository 层集中管理，性能可预期，排查问题直接看 SQL。
+
+### 为什么所有列表接口返回空数组而非 null
+
+`items: []` 而非 `items: null`。Repository 层在查询无结果时返回空切片，前端无需做 null check。
+
+### 为什么 Refresh Token 使用轮转策略
+
+每次使用后吊销旧 Token、签发新 Token。如果 Refresh Token 被窃取，攻击者和合法用户竞争使用，竞争者的失败会暴露窃取行为，触发全局吊销。
+
+### 为什么登录频率限制同时检查 IP 和用户名
+
+防御两种攻击: 同 IP 暴力破解同一用户，同 IP 遍历用户字典。任一维度触发阈值即锁定。
+
+## 1C1G 资源规划
+
+| 进程 | 实际内存 | 说明 |
+|------|---------|------|
+| Go 应用 | 30-80MB | 纯 Go SQLite 驱动，无 CGO 开销 |
+| Nginx | 10-20MB | 1 worker_processes |
+| SQLite 缓存 | 8MB | PRAGMA cache_size=-8000 |
+| 系统 | ~300MB | Debian minimal |
+| 合计 | ~350-400MB | 留有 600MB+ 余量 |
+
+### 内存优化措施
+
+- `GOMEMLIMIT=200MiB` 环境变量硬限制
+- SQLite: `synchronous=NORMAL`, `temp_store=MEMORY`
+- Nginx: `worker_processes 1`, `gzip_min_length 256`
+- Go 日志输出到 stdout（systemd journal 收集），不写文件

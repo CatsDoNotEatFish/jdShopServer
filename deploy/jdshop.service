@@ -1,0 +1,33 @@
+[Unit]
+Description=jdShop Cloud Backend
+After=network.target
+
+[Service]
+Type=simple
+User=jdshop
+Group=jdshop
+WorkingDirectory=/opt/jdshop
+
+# 内存硬限制: 200MB (1C1G 下留足余量)
+Environment="GOMEMLIMIT=200MiB"
+Environment="JWT_SECRET=<填入真实密钥，至少32字节>"
+
+ExecStart=/opt/jdshop/bin/jdshop-server serve
+Restart=on-failure
+RestartSec=5
+
+# 安全加固
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/jdshop/data /opt/jdshop/logs /opt/jdshop/backups
+ReadOnlyPaths=/opt/jdshop/bin /opt/jdshop/migrations
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jdshop
+
+[Install]
+WantedBy=multi-user.target
