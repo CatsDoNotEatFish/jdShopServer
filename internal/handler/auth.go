@@ -68,6 +68,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			respondError(w, 10001, "用户名或密码错误")
 		case errors.Is(err, service.ErrAccountDisabled):
 			respondError(w, 10003, "账号已被禁用")
+		case errors.Is(err, service.ErrAccountExpired):
+			respondError(w, 10003, "账号使用时间已到期")
 		case errors.Is(err, service.ErrTooManyAttempts):
 			respondError(w, 10003, "登录尝试过于频繁，请15分钟后再试")
 		default:
@@ -99,6 +101,8 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 			respondError(w, 10002, "Token已过期，请重新登录")
 		case errors.Is(err, service.ErrAccountDisabled):
 			respondError(w, 10003, "账号已被禁用")
+		case errors.Is(err, service.ErrAccountExpired):
+			respondError(w, 10003, "账号使用时间已到期")
 		default:
 			respondError(w, 10500, "服务内部错误")
 		}
@@ -106,4 +110,17 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondOK(w, result)
+}
+
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	var req model.RefreshRequest
+	if err := decodeBody(r, &req); err != nil {
+		respondError(w, 10001, "请求格式错误")
+		return
+	}
+	if err := h.authService.Logout(req.RefreshToken); err != nil {
+		respondError(w, 10500, "服务内部错误")
+		return
+	}
+	respondMessage(w, 0, "退出成功")
 }

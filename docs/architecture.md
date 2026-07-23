@@ -4,8 +4,8 @@
 
 ```text
 Client (jdShop 桌面端)
-       ↓ HTTPS (443)
-Nginx (反向代理 + 限流 + gzip)
+       ↓ HTTPS API + SSE 长连接 (443)
+Nginx (反向代理 + 限流；SSE 关闭缓冲)
        ↓ HTTP (127.0.0.1:8080)
 Go 应用 (Chi Router, 单一二进制, 17MB)
        ↓
@@ -16,10 +16,11 @@ SQLite 文件 (WAL 模式, data/app.db)
 
 ### Nginx
 
-- HTTPS 终止（Let's Encrypt 证书自动续期）
+- HTTPS 终止（Let's Encrypt/Certbot 或 ZeroSSL/acme.sh 自动续期；当前生产使用 ZeroSSL）
 - `limit_req` 对 API 限流（30 req/min），登录接口额外限制（5 req/min）
 - gzip 压缩 JSON 响应，降低带宽
 - 反向代理到 Go 应用，传递 `X-Real-IP`、`X-Forwarded-For`
+- `/api/v1/control/stream` 使用独立长连接配置，关闭缓冲并设置 1 小时读写超时
 
 ### Go 应用
 
@@ -38,6 +39,7 @@ SQLite 文件 (WAL 模式, data/app.db)
 │  - announcement.go  CRUD + publish      │
 │  - version.go   CRUD + check latest     │
 │  - heartbeat.go heartbeat report        │
+│  - control.go   per-user SSE stream      │
 │  - admin.go     users/roles management  │
 │  - health.go    health check            │
 ├─────────────────────────────────────────┤
@@ -53,6 +55,7 @@ SQLite 文件 (WAL 模式, data/app.db)
 │  - announcement.go  公告业务            │
 │  - version.go   版本管理/更新检查       │
 │  - heartbeat.go 心跳+版本提醒           │
+│  - control.go   按用户分发控制通知       │
 │  - admin.go     用户/角色管理           │
 ├─────────────────────────────────────────┤
 │  Repository (internal/repository/)      │  ← SQL 数据访问
@@ -70,6 +73,10 @@ SQLite 文件 (WAL 模式, data/app.db)
 ```
 
 调用方向: Handler → Service → Repository → SQLite。不允许跨层调用。
+
+账号授权由 `user_access_control` 保存，作为登录、心跳和客户端三大板块展示的共同来源；RBAC 仍然只负责云端权限。服务端管理接口额外使用唯一主管理员边界：JWT 用户名必须匹配 `SUPER_ADMIN_USERNAME` 且持有内置 `admin` 角色，单独拥有角色不能进入后台。
+
+实时控制采用“推送唤醒 + 心跳确认”：内存中的 `ControlHub` 只向目标用户的在线 SSE 连接发送变更信号，不承载最终权限数据；客户端收到信号后请求心跳重新计算数据库中的账号状态。进程重启或网络断线不会丢失授权事实，因为数据库和一分钟心跳仍是权威来源。
 
 ## 项目文件结构
 
@@ -115,9 +122,12 @@ jdShopServer/
 │   └── router/
 │       └── router.go           # 路由注册 + 依赖注入
 ├── migrations/
-│   └── 001_init.sql            # 初始数据库迁移
+│   ├── 001_init.sql            # 初始数据库迁移
+│   ├── 002_user_access_control.sql # 使用期和三个客户端板块
+│   └── 003_user_auth_versions.sql  # Access Token永久失效版本
 ├── deploy/
-│   ├── nginx.conf
+│   ├── nginx.conf              # 证书签发前HTTP引导配置
+│   ├── nginx-https.conf        # ZeroSSL/acme.sh生产HTTPS配置
 │   ├── jdshop.service
 │   ├── deploy.sh
 │   └── backup.sh

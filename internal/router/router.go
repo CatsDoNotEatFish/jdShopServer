@@ -3,6 +3,7 @@ package router
 import (
 	"database/sql"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -27,14 +28,17 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 	versionRepo := repository.NewVersionRepo(db)
 	heartbeatRepo := repository.NewHeartbeatRepo(db)
 	loginLogRepo := repository.NewLoginLogRepo(db)
+	accessRepo := repository.NewAccessRepo(db)
 
 	// Services
-	authSvc := service.NewAuthService(userRepo, tokenRepo, loginLogRepo, cfg.Auth)
-	userSvc := service.NewUserService(userRepo, tokenRepo, cfg.Auth)
+	accessSvc := service.NewAccessService(accessRepo, cfg.Auth.SuperAdminUsername)
+	authSvc := service.NewAuthService(userRepo, tokenRepo, loginLogRepo, accessSvc, cfg.Auth)
+	userSvc := service.NewUserService(userRepo, tokenRepo, accessSvc, cfg.Auth)
 	announcementSvc := service.NewAnnouncementService(announcementRepo)
 	versionSvc := service.NewVersionService(versionRepo)
-	heartbeatSvc := service.NewHeartbeatService(heartbeatRepo, versionRepo)
-	adminSvc := service.NewAdminService(userRepo, roleRepo)
+	heartbeatSvc := service.NewHeartbeatService(heartbeatRepo, versionRepo, userRepo, accessSvc)
+	controlHub := service.NewControlHub()
+	adminSvc := service.NewAdminService(userRepo, roleRepo, accessSvc, tokenRepo, controlHub, cfg.Auth.SuperAdminUsername)
 
 	// Handlers
 	healthH := ih.NewHealthHandler(version)
@@ -43,11 +47,12 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 	announcementH := ih.NewAnnouncementHandler(announcementSvc)
 	versionH := ih.NewVersionHandler(versionSvc)
 	heartbeatH := ih.NewHeartbeatHandler(heartbeatSvc)
+	controlH := ih.NewControlHandler(controlHub)
 	adminH := ih.NewAdminHandler(adminSvc)
 
 	// Middleware
-	authMW := imw.Auth(cfg.Auth.JWTSecret)
-	adminMW := imw.RequireRole("admin")
+	authMW := imw.Auth(cfg.Auth.JWTSecret, userRepo)
+	adminMW := imw.RequireSuperAdmin(cfg.Auth.SuperAdminUsername)
 	rateLimiter := imw.NewRateLimiter(60, time.Minute)
 
 	r := chi.NewRouter()
@@ -55,7 +60,7 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 	// Global middleware
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(timeoutExceptControlStream(30 * time.Second))
 	r.Use(imw.Logger(logger))
 
 	// CORS
@@ -68,6 +73,15 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 		MaxAge:           300,
 	}))
 
+	// Static files (API 控制台 + 管理后台)
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "static/index.html")
+	})
+	r.Get("/admin", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "static/admin.html")
+	})
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
 	// Public routes (no auth)
 	r.Group(func(r chi.Router) {
 		r.Use(rateLimiter.Handler)
@@ -76,6 +90,7 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 		r.Post("/api/v1/auth/register", authH.Register)
 		r.Post("/api/v1/auth/login", authH.Login)
 		r.Post("/api/v1/auth/refresh", authH.Refresh)
+		r.Post("/api/v1/auth/logout", authH.Logout)
 		r.Get("/api/v1/announcements", announcementH.PublicList)
 		r.Get("/api/v1/version/latest", versionH.CheckLatest)
 	})
@@ -88,6 +103,7 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 		r.Put("/api/v1/user/profile", userH.UpdateProfile)
 		r.Put("/api/v1/user/password", userH.ChangePassword)
 		r.Post("/api/v1/heartbeat", heartbeatH.Report)
+		r.Get("/api/v1/control/stream", controlH.Stream)
 	})
 
 	// Admin routes
@@ -99,6 +115,7 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 		r.Get("/api/v1/admin/users", adminH.ListUsers)
 		r.Put("/api/v1/admin/users/{id}/status", adminH.UpdateUserStatus)
 		r.Post("/api/v1/admin/users/{id}/roles", adminH.AssignUserRoles)
+		r.Put("/api/v1/admin/users/{id}/access", adminH.UpdateUserAccess)
 
 		// Roles
 		r.Get("/api/v1/admin/roles", adminH.ListRoles)
@@ -125,4 +142,17 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 	})
 
 	return r
+}
+
+func timeoutExceptControlStream(timeout time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		timed := middleware.Timeout(timeout)(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/v1/control/stream" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			timed.ServeHTTP(w, r)
+		})
+	}
 }

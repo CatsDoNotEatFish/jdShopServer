@@ -17,7 +17,12 @@ func NewVersionRepo(db *sql.DB) *VersionRepo {
 }
 
 func (r *VersionRepo) Create(v *model.AppVersion) error {
-	result, err := r.db.Exec(
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(
 		`INSERT INTO app_versions (platform, version_code, version_name, title, description,
 		 download_url, file_size, file_hash, is_force, is_latest)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 0), 1)`,
@@ -31,8 +36,10 @@ func (r *VersionRepo) Create(v *model.AppVersion) error {
 	v.ID = id
 
 	// Set all other versions of same platform as not latest
-	r.db.Exec(`UPDATE app_versions SET is_latest = 0 WHERE platform = ? AND id != ?`, v.Platform, id)
-	return nil
+	if _, err := tx.Exec(`UPDATE app_versions SET is_latest = 0 WHERE platform = ? AND id != ?`, v.Platform, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *VersionRepo) FindByID(id int64) (*model.AppVersion, error) {
@@ -58,7 +65,7 @@ func (r *VersionRepo) FindLatest(platform string) (*model.AppVersion, error) {
 	err := r.db.QueryRow(
 		`SELECT id, platform, version_code, version_name, title, description, download_url,
 		        file_size, file_hash, is_force, is_latest, created_at
-		 FROM app_versions WHERE platform = ? AND is_latest = 1`, platform,
+		 FROM app_versions WHERE platform = ? AND is_latest = 1 ORDER BY version_code DESC LIMIT 1`, platform,
 	).Scan(&v.ID, &v.Platform, &v.VersionCode, &v.VersionName, &v.Title,
 		&v.Description, &v.DownloadURL, &v.FileSize, &v.FileHash,
 		&v.IsForce, &v.IsLatest, &v.CreatedAt)
@@ -147,12 +154,34 @@ func (r *VersionRepo) Update(id int64, title, description, downloadURL, fileHash
 		setParts = append(setParts, "is_force = ?")
 		args = append(args, *isForce)
 	}
-	if isLatest != nil && *isLatest == 1 {
-		setParts = append(setParts, "is_latest = 1")
+	if isLatest != nil {
+		setParts = append(setParts, "is_latest = ?")
+		args = append(args, *isLatest)
 	}
 
 	if len(setParts) == 0 {
 		return nil
+	}
+
+	if isLatest != nil && *isLatest == 1 {
+		var platform string
+		if err := r.db.QueryRow(`SELECT platform FROM app_versions WHERE id = ?`, id).Scan(&platform); err != nil {
+			return err
+		}
+		tx, err := r.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`UPDATE app_versions SET is_latest = 0 WHERE platform = ?`, platform); err != nil {
+			return err
+		}
+		args = append(args, id)
+		query := fmt.Sprintf("UPDATE app_versions SET %s WHERE id = ?", strings.Join(setParts, ", "))
+		if _, err := tx.Exec(query, args...); err != nil {
+			return err
+		}
+		return tx.Commit()
 	}
 
 	args = append(args, id)
@@ -162,6 +191,25 @@ func (r *VersionRepo) Update(id int64, title, description, downloadURL, fileHash
 }
 
 func (r *VersionRepo) Delete(id int64) error {
-	_, err := r.db.Exec(`DELETE FROM app_versions WHERE id = ?`, id)
-	return err
+	var platform string
+	var wasLatest int
+	if err := r.db.QueryRow(`SELECT platform, is_latest FROM app_versions WHERE id = ?`, id).Scan(&platform, &wasLatest); err != nil {
+		return err
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM app_versions WHERE id = ?`, id); err != nil {
+		return err
+	}
+	if wasLatest == 1 {
+		if _, err := tx.Exec(`UPDATE app_versions SET is_latest = 1 WHERE id = (
+			SELECT id FROM app_versions WHERE platform = ? ORDER BY version_code DESC LIMIT 1
+		)`, platform); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

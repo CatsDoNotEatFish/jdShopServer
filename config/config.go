@@ -28,12 +28,14 @@ type DatabaseConfig struct {
 }
 
 type AuthConfig struct {
-	JWTSecret        string `yaml:"jwt_secret"`
-	BcryptCost       int    `yaml:"bcrypt_cost"`
-	AccessTokenTTL   int    `yaml:"access_token_ttl"`
-	RefreshTokenTTL  int    `yaml:"refresh_token_ttl"`
-	LoginMaxAttempts int    `yaml:"login_max_attempts"`
-	LoginLockMinutes int    `yaml:"login_lock_minutes"`
+	JWTSecret          string `yaml:"jwt_secret"`
+	SuperAdminUsername string `yaml:"super_admin_username"`
+	BcryptCost         int    `yaml:"bcrypt_cost"`
+	AccessTokenTTL     int    `yaml:"access_token_ttl"`
+	RefreshTokenTTL    int    `yaml:"refresh_token_ttl"`
+	LoginMaxAttempts   int    `yaml:"login_max_attempts"`
+	LoginLockMinutes   int    `yaml:"login_lock_minutes"`
+	DefaultUsageDays   int    `yaml:"default_usage_days"`
 }
 
 type LogConfig struct {
@@ -64,12 +66,14 @@ func Load(path string) (*Config, error) {
 			WALMode:      true,
 		},
 		Auth: AuthConfig{
-			JWTSecret:        "change-me-in-production",
-			BcryptCost:       10,
-			AccessTokenTTL:   7200,
-			RefreshTokenTTL:  2592000,
-			LoginMaxAttempts: 5,
-			LoginLockMinutes: 15,
+			JWTSecret:          "change-me-in-production",
+			SuperAdminUsername: "admin",
+			BcryptCost:         10,
+			AccessTokenTTL:     7200,
+			RefreshTokenTTL:    2592000,
+			LoginMaxAttempts:   5,
+			LoginLockMinutes:   15,
+			DefaultUsageDays:   30,
 		},
 		Log: LogConfig{
 			Level: "info",
@@ -87,6 +91,9 @@ func Load(path string) (*Config, error) {
 	// Environment variable overrides
 	if s := os.Getenv("JWT_SECRET"); s != "" {
 		cfg.Auth.JWTSecret = s
+	}
+	if s := os.Getenv("SUPER_ADMIN_USERNAME"); s != "" {
+		cfg.Auth.SuperAdminUsername = s
 	}
 	if s := os.Getenv("DB_PATH"); s != "" {
 		cfg.Database.Path = s

@@ -18,11 +18,12 @@ var (
 type UserService struct {
 	userRepo  *repository.UserRepo
 	tokenRepo *repository.TokenRepo
+	accessSvc *AccessService
 	cfg       config.AuthConfig
 }
 
-func NewUserService(userRepo *repository.UserRepo, tokenRepo *repository.TokenRepo, cfg config.AuthConfig) *UserService {
-	return &UserService{userRepo: userRepo, tokenRepo: tokenRepo, cfg: cfg}
+func NewUserService(userRepo *repository.UserRepo, tokenRepo *repository.TokenRepo, accessSvc *AccessService, cfg config.AuthConfig) *UserService {
+	return &UserService{userRepo: userRepo, tokenRepo: tokenRepo, accessSvc: accessSvc, cfg: cfg}
 }
 
 func (s *UserService) GetProfile(userID int64) (*model.User, error) {
@@ -33,6 +34,11 @@ func (s *UserService) GetProfile(userID int64) (*model.User, error) {
 	if user == nil {
 		return nil, ErrUserNotFound
 	}
+	access, err := s.accessSvc.Evaluate(user)
+	if err != nil {
+		return nil, err
+	}
+	user.Access = access
 	return user, nil
 }
 
@@ -51,7 +57,7 @@ func (s *UserService) UpdateProfile(userID int64, req model.UpdateProfileRequest
 	if err := s.userRepo.UpdateProfile(userID, nickname, email, avatarURL); err != nil {
 		return nil, err
 	}
-	return s.userRepo.FindByID(userID)
+	return s.GetProfile(userID)
 }
 
 func (s *UserService) ChangePassword(userID int64, req model.ChangePasswordRequest) error {

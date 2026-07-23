@@ -10,7 +10,7 @@ WorkingDirectory=/opt/jdshop
 
 # 内存硬限制: 200MB (1C1G 下留足余量)
 Environment="GOMEMLIMIT=200MiB"
-Environment="JWT_SECRET=<填入真实密钥，至少32字节>"
+EnvironmentFile=/etc/jdshop/jdshop.env
 
 ExecStart=/opt/jdshop/bin/jdshop-server serve
 Restart=on-failure
@@ -22,7 +22,7 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=/opt/jdshop/data /opt/jdshop/logs /opt/jdshop/backups
-ReadOnlyPaths=/opt/jdshop/bin /opt/jdshop/migrations
+ReadOnlyPaths=/opt/jdshop/bin /opt/jdshop/migrations /opt/jdshop/static
 
 # 日志
 StandardOutput=journal

@@ -10,11 +10,13 @@ database:
   wal_mode: true
 
 auth:
+  super_admin_username: "admin"
   bcrypt_cost: 10
   access_token_ttl: 7200
   refresh_token_ttl: 2592000
   login_max_attempts: 5
   login_lock_minutes: 15
+  default_usage_days: 30
 
 log:
   level: "info"

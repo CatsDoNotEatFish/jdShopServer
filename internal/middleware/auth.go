@@ -6,17 +6,19 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"jdShopServer/internal/repository"
 )
 
 type contextKey string
 
 const (
-	ContextUserID      contextKey = "user_id"
-	ContextUsername    contextKey = "username"
-	ContextUserRoles   contextKey = "user_roles"
+	ContextUserID    contextKey = "user_id"
+	ContextUsername  contextKey = "username"
+	ContextUserRoles contextKey = "user_roles"
 )
 
-func Auth(jwtSecret string) func(http.Handler) http.Handler {
+func Auth(jwtSecret string, userRepo *repository.UserRepo) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := r.Header.Get("Authorization")
@@ -44,6 +46,28 @@ func Auth(jwtSecret string) func(http.Handler) http.Handler {
 			}
 
 			userID, _ := claims["sub"].(float64)
+			if userID <= 0 {
+				writeAuthError(w, 10002, "认证凭证解析失败")
+				return
+			}
+			tokenAuthVersion := int64(1)
+			if rawVersion, exists := claims["auth_version"]; exists {
+				version, ok := rawVersion.(float64)
+				if !ok || version < 1 {
+					writeAuthError(w, 10002, "认证凭证解析失败")
+					return
+				}
+				tokenAuthVersion = int64(version)
+			}
+			status, currentAuthVersion, exists, err := userRepo.TokenState(int64(userID))
+			if err != nil || !exists || status == 0 {
+				writeAuthError(w, 10002, "账号已禁用或认证凭证已失效")
+				return
+			}
+			if currentAuthVersion != tokenAuthVersion {
+				writeAuthError(w, 10002, "认证凭证已失效，请重新登录")
+				return
+			}
 			username, _ := claims["username"].(string)
 			rolesRaw, _ := claims["roles"].([]any)
 

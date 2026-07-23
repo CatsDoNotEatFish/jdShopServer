@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>jdShopServer API 文档</title>
+<style>
+:root { --bg:#0d1117; --bg2:#161b22; --border:#30363d; --text:#c9d1d9; --text2:#8b949e; --blue:#58a6ff; --green:#3fb950; --red:#f85149; --yellow:#d2991d; --purple:#a371f7; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); line-height:1.6; }
+.sidebar { position:fixed; left:0; top:0; bottom:0; width:260px; background:var(--bg2); border-right:1px solid var(--border); overflow-y:auto; padding:20px 0; z-index:10; }
+.sidebar h1 { font-size:16px; color:var(--blue); padding:0 16px 16px; border-bottom:1px solid var(--border); margin-bottom:10px; }
+.sidebar .group { font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--text2); padding:10px 16px 4px; }
+.sidebar a { display:block; padding:4px 16px; color:var(--text); text-decoration:none; font-size:12px; }
+.sidebar a:hover { background:#1f2937; }
+.main { margin-left:260px; padding:30px 40px; max-width:1000px; }
+.token-box { background:var(--bg2); border:1px solid var(--border); border-radius:6px; padding:14px 18px; margin-bottom:24px; }
+.token-box h3 { font-size:14px; margin-bottom:8px; }
+.token-box .row { display:flex; gap:8px; }
+.token-box input { flex:1; background:#0d1117; border:1px solid var(--border); border-radius:4px; padding:6px 10px; color:var(--text); font-family:Consolas,monospace; font-size:12px; }
+.token-box button { padding:6px 12px; border:1px solid var(--blue); background:transparent; color:var(--blue); border-radius:4px; cursor:pointer; font-size:12px; white-space:nowrap; }
+.token-box button:hover { background:#1b2d3d; }
+
+/* Header block */
+.guide { background:var(--bg2); border:1px solid var(--border); border-radius:6px; padding:20px 24px; margin-bottom:24px; }
+.guide h2 { font-size:18px; margin-bottom:10px; }
+.guide p { font-size:13px; color:var(--text2); }
+.guide .cols { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:16px; }
+.guide .card { background:#0d1117; border:1px solid var(--border); border-radius:4px; padding:14px; }
+.guide .card h4 { font-size:13px; color:var(--blue); margin-bottom:6px; }
+.guide .card p,.guide .card li { font-size:12px; color:var(--text2); line-height:1.8; }
+.guide .card ul { padding-left:16px; }
+.guide .card code { background:var(--bg2); padding:1px 5px; border-radius:3px; color:var(--text); font-size:11px; }
+.guide .card pre { font-size:11px; padding:8px; max-height:100px; margin-top:4px; }
+table.errs { width:100%; font-size:11px; border-collapse:collapse; }
+table.errs td { padding:2px 6px; }
+table.errs td:first-child { color:var(--red); font-weight:700; width:50px; }
+
+/* Endpoint card */
+.ep { margin-bottom:32px; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+.ep-h { display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(--bg2); border-bottom:1px solid var(--border); cursor:pointer; }
+.ep-h:hover { background:#1c2333; }
+.method { font-weight:700; font-size:12px; padding:3px 8px; border-radius:4px; min-width:48px; text-align:center; }
+.m-get { background:#1b3d1b; color:var(--green); }
+.m-post { background:#1b2d3d; color:var(--blue); }
+.m-put { background:#3d2e1b; color:var(--yellow); }
+.m-del { background:#3d1b1b; color:var(--red); }
+.ep-path { font-family:Consolas,monospace; font-size:14px; flex:1; }
+.ep-auth { font-size:10px; padding:2px 6px; border-radius:3px; }
+.a-none { background:#1b3d1b; color:var(--green); }
+.a-jwt { background:#2e1b5e; color:var(--purple); }
+.a-admin { background:#5e1b1b; color:var(--red); }
+
+.ep-body { padding:16px 20px; display:none; }
+.ep-body.open { display:block; }
+.ep-body h4 { font-size:12px; color:var(--text2); text-transform:uppercase; letter-spacing:0.5px; margin:14px 0 6px; }
+.ep-body h4:first-child { margin-top:0; }
+
+/* Param table */
+.pt { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:8px; }
+.pt th { text-align:left; color:var(--text2); font-weight:500; padding:4px 8px; border-bottom:1px solid var(--border); font-size:11px; }
+.pt td { padding:5px 8px; border-bottom:1px solid rgba(48,54,61,0.5); vertical-align:top; }
+.pt td:first-child { font-family:Consolas,monospace; color:var(--blue); }
+.pt td:nth-child(2) { color:var(--text2); font-size:11px; }
+.pt .r { color:var(--red); font-size:10px; font-weight:700; }
+.pt .o { color:var(--text2); font-size:10px; }
+
+/* Code blocks */
+pre { background:#0d1117; border:1px solid var(--border); border-radius:4px; padding:12px; overflow-x:auto; font-size:12px; font-family:Consolas,monospace; max-height:260px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; }
+
+/* Try test area */
+.test-row { display:flex; gap:8px; align-items:flex-start; margin-top:10px; }
+.test-row textarea { flex:1; background:#0d1117; border:1px solid var(--border); border-radius:4px; padding:8px 10px; color:var(--text); font-family:Consolas,monospace; font-size:12px; min-height:44px; resize:vertical; }
+.test-row input { background:#0d1117; border:1px solid var(--border); border-radius:4px; padding:6px 10px; color:var(--text); font-family:Consolas,monospace; font-size:12px; width:90px; }
+.test-btn { margin-top:10px; padding:6px 16px; border:1px solid var(--green); background:transparent; color:var(--green); border-radius:4px; cursor:pointer; font-size:12px; }
+.test-btn:hover { background:#1b3d1b; }
+.test-result { margin-top:10px; display:none; }
+.test-result.show { display:block; }
+.status-dot { display:inline-flex; align-items:center; gap:5px; font-size:11px; padding:2px 8px; border-radius:3px; }
+.status-dot.on { background:#1b3d1b; color:var(--green); }
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <h1>jdShopServer v1.0.0</h1>
+  <div style="padding:0 16px 10px"><span class="status-dot on" id="srv">检测中...</span></div>
+  <div class="group">公开接口</div>
+  <a href="#ep-health">GET /health</a>
+  <a href="#ep-register">POST /auth/register</a>
+  <a href="#ep-login">POST /auth/login</a>
+  <a href="#ep-refresh">POST /auth/refresh</a>
+  <a href="#ep-announcements">GET /announcements</a>
+  <a href="#ep-version">GET /version/latest</a>
+  <div class="group">需鉴权接口 (JWT)</div>
+  <a href="#ep-profile">GET /user/profile</a>
+  <a href="#ep-profile-put">PUT /user/profile</a>
+  <a href="#ep-password">PUT /user/password</a>
+  <a href="#ep-heartbeat">POST /heartbeat</a>
+  <a href="#ep-control-stream">GET /control/stream</a>
+  <div class="group">管理员接口 (admin)</div>
+  <a href="#ep-admin-users">GET /admin/users</a>
+  <a href="#ep-admin-user-status">PUT /admin/users/:id/status</a>
+  <a href="#ep-admin-user-roles">POST /admin/users/:id/roles</a>
+  <a href="#ep-admin-roles">GET /admin/roles</a>
+  <a href="#ep-admin-roles-create">POST /admin/roles</a>
+  <a href="#ep-admin-roles-update">PUT /admin/roles/:id</a>
+  <a href="#ep-admin-roles-delete">DELETE /admin/roles/:id</a>
+  <a href="#ep-admin-perms">GET /admin/permissions</a>
+  <a href="#ep-admin-ann-list">GET /admin/announcements</a>
+  <a href="#ep-admin-ann-create">POST /admin/announcements</a>
+  <a href="#ep-admin-ann-update">PUT /admin/announcements/:id</a>
+  <a href="#ep-admin-ann-del">DELETE /admin/announcements/:id</a>
+  <a href="#ep-admin-ann-pub">POST .../publish</a>
+  <a href="#ep-admin-ann-unpub">POST .../unpublish</a>
+  <a href="#ep-admin-ver-list">GET /admin/versions</a>
+  <a href="#ep-admin-ver-create">POST /admin/versions</a>
+  <a href="#ep-admin-ver-update">PUT /admin/versions/:id</a>
+  <a href="#ep-admin-ver-del">DELETE /admin/versions/:id</a>
+</div>
+
+<div class="main">
+
+<!-- ====== GUIDE ====== -->
+<div class="guide">
+  <h2>jdShopServer API 完整参考文档</h2>
+  <p>本页面既是文档也是调试控制台，只监听 127.0.0.1。其他 AI 或开发者可直接在此阅读每个接口的完整说明并一键测试。</p>
+  <div class="cols">
+    <div class="card">
+      <h4>基础信息</h4>
+      <ul>
+        <li>Base URL: <code>当前站点 /api/v1</code></li>
+        <li>管理员密码由部署环境负责设置，请勿写入调试页面</li>
+        <li>Token 有效期: Access 2h, Refresh 30d</li>
+        <li>密码: bcrypt cost=10</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>通用响应格式</h4>
+      <pre>{"code":0,"message":"success","data":{}}
+// 分页 data: {"items":[...],"total":N,"page":1,"page_size":20}</pre>
+    </div>
+    <div class="card">
+      <h4>错误码速查</h4>
+      <table class="errs">
+        <tr><td>0</td><td>成功</td></tr>
+        <tr><td>10001</td><td>参数校验失败 (400)</td></tr>
+        <tr><td>10002</td><td>未认证 / Token过期 (401)</td></tr>
+        <tr><td>10003</td><td>无权限 / 禁用 / 限流 (403)</td></tr>
+        <tr><td>10004</td><td>资源不存在 (404)</td></tr>
+        <tr><td>10005</td><td>资源冲突 (409)</td></tr>
+        <tr><td>10500</td><td>服务内部错误 (500)</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ====== TOKEN ====== -->
+<div class="token-box">
+  <h3>全局 Access Token（所有 JWT / admin 接口共用）</h3>
+  <div class="row">
+    <input id="gtok" placeholder="在此粘贴 access_token ..." />
+    <button onclick="document.getElementById('gtok').value=sessionStorage.getItem('tok')||''">读取保存</button>
+    <button onclick="sessionStorage.setItem('tok',document.getElementById('gtok').value.trim());alert('已保存')">保存</button>
+  </div>
+  <div style="font-size:11px;color:var(--text2);margin-top:6px">
+    鉴权方式: Header <code style="background:var(--bg);padding:1px 4px;border-radius:2px">Authorization: Bearer &lt;token&gt;</code>
+    &nbsp;|&nbsp; 连续失败 5 次锁定 15 分钟
+  </div>
+</div>
+
+<h2 style="font-size:18px;margin-bottom:16px">接口列表</h2>
+
+<!-- ==================== HEALTH ==================== -->
+<div class="ep" id="ep-health"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-get">GET</span><span class="ep-path">/api/v1/health</span><span class="ep-auth a-none">公开</span>
+</div><div class="ep-body open">
+  <p style="color:var(--text2);font-size:13px">服务健康检查。所有客户端启动时先调用此接口确认服务可用。</p>
+  <h4>请求参数</h4>
+  <p style="font-size:12px;color:var(--text2)">无参数，无需鉴权。</p>
+  <h4>成功响应</h4>
+  <pre>HTTP 200
+{"code":0,"message":"success","data":{"status":"healthy","time":"2026-07-04T11:47:59Z","version":"1.0.0"}}</pre>
+  <button class="test-btn" onclick="test('GET','/api/v1/health')">▶ 测试</button>
+  <div class="test-result" id="r-health"></div>
+</div></div>
+
+<!-- ==================== REGISTER ==================== -->
+<div class="ep" id="ep-register"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-post">POST</span><span class="ep-path">/api/v1/auth/register</span><span class="ep-auth a-none">公开</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">注册新用户。注册后自动获得 "user" 角色。</p>
+  <h4>请求体 (JSON)</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>username</td><td>string</td><td><span class="r">必填</span></td><td>3-32 字符，字母数字下划线</td></tr>
+    <tr><td>password</td><td>string</td><td><span class="r">必填</span></td><td>6-64 字符</td></tr>
+    <tr><td>email</td><td>string</td><td><span class="o">可选</span></td><td>邮箱地址</td></tr>
+    <tr><td>nickname</td><td>string</td><td><span class="o">可选</span></td><td>显示昵称</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>{"username":"testuser","password":"test123","nickname":"测试用户","email":"test@example.com"}</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200
+{"code":0,"message":"success","data":{"id":2,"username":"testuser","nickname":"测试用户"}}</pre>
+  <h4>错误响应</h4>
+  <pre>// 用户名已存在
+HTTP 409  {"code":10005,"message":"用户名已被占用","data":null}
+
+// 参数校验失败
+HTTP 400  {"code":10001,"message":"用户名长度须为3-32字符","data":null}</pre>
+  <div class="test-row"><textarea id="bb-register">{"username":"testuser","password":"test123","nickname":"test"}</textarea></div>
+  <button class="test-btn" onclick="test('POST','/api/v1/auth/register','bb-register')">▶ 测试</button>
+  <div class="test-result" id="r-register"></div>
+</div></div>
+
+<!-- ==================== LOGIN ==================== -->
+<div class="ep" id="ep-login"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-post">POST</span><span class="ep-path">/api/v1/auth/login</span><span class="ep-auth a-none">公开</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">登录，返回 JWT token 对。Access Token 有效期 2 小时，Refresh Token 有效期 30 天。</p>
+  <h4>请求体 (JSON)</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>username</td><td>string</td><td><span class="r">必填</span></td><td>用户名</td></tr>
+    <tr><td>password</td><td>string</td><td><span class="r">必填</span></td><td>密码</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>{"username":"admin","password":"your-password"}</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200
+{"code":0,"message":"success","data":{
+  "access_token":"eyJhbGciOi...",       // JWT, 2h 有效期
+  "refresh_token":"C33IPlK98wiuA...",   // 刷新 Token, 30d 有效期
+  "expires_in":7200,                     // Access Token 有效秒数
+  "user":{"id":1,"username":"admin","nickname":"管理员","roles":["admin"]}
+}}</pre>
+  <h4>错误响应</h4>
+  <pre>// 用户名或密码错误
+HTTP 400  {"code":10001,"message":"用户名或密码错误","data":null}
+
+// 账号已禁用
+HTTP 403  {"code":10003,"message":"账号已被禁用","data":null}
+
+// 登录过于频繁（5次/15分钟）
+HTTP 403  {"code":10003,"message":"登录尝试过于频繁，请15分钟后再试","data":null}</pre>
+  <div class="test-row"><textarea id="bb-login">{"username":"admin","password":"your-password"}</textarea></div>
+  <button class="test-btn" onclick="test('POST','/api/v1/auth/login','bb-login',true)">▶ 测试</button>
+  <div class="test-result" id="r-login"></div>
+</div></div>
+
+<!-- ==================== REFRESH ==================== -->
+<div class="ep" id="ep-refresh"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-post">POST</span><span class="ep-path">/api/v1/auth/refresh</span><span class="ep-auth a-none">公开</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">使用 Refresh Token 换取新的 Token 对。<b>轮转策略</b>：旧 Refresh Token 使用后立即吊销，同时签发新的。如果 Token 被盗，合法用户刷新时会发现旧 Token 已失效，从而触发重新登录并全局吊销。</p>
+  <h4>请求体 (JSON)</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>refresh_token</td><td>string</td><td><span class="r">必填</span></td><td>登录时返回的 refresh_token</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>{"refresh_token":"C33IPlK98wiuA9Ax5xdO..."}</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200
+{"code":0,"message":"success","data":{
+  "access_token":"eyJhbGciOi...",
+  "refresh_token":"新的refresh_token",
+  "expires_in":7200
+}}</pre>
+  <h4>错误响应</h4>
+  <pre>// Token 已被吊销（轮转冲突）
+HTTP 401  {"code":10002,"message":"Token已失效，请重新登录","data":null}
+
+// Token 已过期
+HTTP 401  {"code":10002,"message":"Token已过期，请重新登录","data":null}</pre>
+  <div class="test-row"><textarea id="bb-refresh">{"refresh_token":"在此粘贴refresh_token"}</textarea></div>
+  <button class="test-btn" onclick="test('POST','/api/v1/auth/refresh','bb-refresh')">▶ 测试</button>
+  <div class="test-result" id="r-refresh"></div>
+</div></div>
+
+<!-- ==================== PUBLIC ANNOUNCEMENTS ==================== -->
+<div class="ep" id="ep-announcements"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-get">GET</span><span class="ep-path">/api/v1/announcements</span><span class="ep-auth a-none">公开</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">获取已发布公告列表。客户端启动后拉取展示。</p>
+  <h4>Query 参数</h4>
+  <table class="pt">
+    <tr><th>参数</th><th>类型</th><th>默认</th><th>说明</th></tr>
+    <tr><td>page</td><td>int</td><td>1</td><td>页码</td></tr>
+    <tr><td>page_size</td><td>int</td><td>20</td><td>每页条数</td></tr>
+    <tr><td>level</td><td>string</td><td>(空)</td><td>筛选级别: info / warning / critical</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>GET /api/v1/announcements
+GET /api/v1/announcements?level=warning&page=1&page_size=10</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200
+{"code":0,"message":"success","data":{
+  "items":[{
+    "id":1,"title":"系统维护通知","content":"7月10日进行系统维护",
+    "level":"warning","is_published":1,
+    "published_at":"2026-07-04T09:06:34Z","created_by":1,
+    "created_at":"2026-07-04 09:06:34","updated_at":"2026-07-04T09:06:34Z"
+  }],
+  "total":1,"page":1,"page_size":20
+}}</pre>
+  <button class="test-btn" onclick="test('GET','/api/v1/announcements')">▶ 测试</button>
+  <div class="test-result" id="r-announcements"></div>
+</div></div>
+
+<!-- ==================== VERSION LATEST ==================== -->
+<div class="ep" id="ep-version"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-get">GET</span><span class="ep-path">/api/v1/version/latest</span><span class="ep-auth a-none">公开</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">检查指定平台是否有新版本。服务端比较 current_version_code 与数据库中的最新 version_code。</p>
+  <h4>Query 参数</h4>
+  <table class="pt">
+    <tr><th>参数</th><th>类型</th><th>默认</th><th>说明</th></tr>
+    <tr><td>platform</td><td>string</td><td>windows</td><td>平台: windows / mac / linux / android / ios</td></tr>
+    <tr><td>current_version_code</td><td>int</td><td>0</td><td>客户端当前版本号（数字，用于比较）</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>GET /api/v1/version/latest
+GET /api/v1/version/latest?platform=windows&current_version_code=2026070100</pre>
+  <h4>有更新时响应</h4>
+  <pre>HTTP 200
+{"code":0,"data":{
+  "has_update":true,
+  "is_force":false,
+  "version":{
+    "id":1,"platform":"windows","version_code":2026070401,
+    "version_name":"v1.0.1","title":"v1.0.1 更新",
+    "description":"- 修复若干bug\n- 性能优化",
+    "download_url":"https://...", "file_size":52428800,
+    "file_hash":"sha256:...", "is_force":0, "is_latest":1
+  }
+}}</pre>
+  <h4>无更新时响应</h4>
+  <pre>HTTP 200
+{"code":0,"data":{"has_update":false,"is_force":false}}</pre>
+  <div class="test-row" style="align-items:center"><span style="font-size:11px;color:var(--text2);margin-right:6px">current_version_code:</span><input id="in-ver-code" value="2026070100" style="width:140px" /></div>
+  <button class="test-btn" onclick="test('GET','/api/v1/version/latest?platform=windows&current_version_code='+document.getElementById('in-ver-code').value)">▶ 测试</button>
+  <div class="test-result" id="r-version"></div>
+</div></div>
+
+<!-- ==================== GET PROFILE ==================== -->
+<div class="ep" id="ep-profile"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-get">GET</span><span class="ep-path">/api/v1/user/profile</span><span class="ep-auth a-jwt">JWT</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">获取当前登录用户的个人信息、邮箱、状态、角色等。</p>
+  <h4>请求头</h4>
+  <pre>Authorization: Bearer &lt;access_token&gt;</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200
+{"code":0,"message":"success","data":{
+  "id":2,"username":"testuser","email":"test@example.com",
+  "nickname":"Test User","avatar_url":null,"status":1,
+  "last_login_at":"2026-07-04T09:06:20Z",
+  "created_at":"2026-07-04 09:06:16","updated_at":"2026-07-04 09:06:16",
+  "roles":["user"]
+}}</pre>
+  <h4>错误响应</h4>
+  <pre>// 未提供 Token
+HTTP 401  {"code":10002,"message":"未提供认证凭证","data":null}
+
+// Token 过期
+HTTP 401  {"code":10002,"message":"认证凭证无效或已过期","data":null}</pre>
+  <button class="test-btn" onclick="test('GET','/api/v1/user/profile')">▶ 测试</button>
+  <div class="test-result" id="r-profile"></div>
+</div></div>
+
+<!-- ==================== PUT PROFILE ==================== -->
+<div class="ep" id="ep-profile-put"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-put">PUT</span><span class="ep-path">/api/v1/user/profile</span><span class="ep-auth a-jwt">JWT</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">修改个人信息。只更新传入的非空字段（不传或传空字符串的字段保持不变）。</p>
+  <h4>请求体 (JSON)</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>nickname</td><td>string</td><td><span class="o">可选</span></td><td>新昵称</td></tr>
+    <tr><td>email</td><td>string</td><td><span class="o">可选</span></td><td>新邮箱</td></tr>
+    <tr><td>avatar_url</td><td>string</td><td><span class="o">可选</span></td><td>新头像 URL</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>{"nickname":"新的昵称","email":"new@example.com"}</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200  → 返回更新后的完整用户信息（结构同 GET /profile）</pre>
+  <div class="test-row"><textarea id="bb-put-pro">{"nickname":"新昵称","email":"new@example.com"}</textarea></div>
+  <button class="test-btn" onclick="test('PUT','/api/v1/user/profile','bb-put-pro')">▶ 测试</button>
+  <div class="test-result" id="r-put-pro"></div>
+</div></div>
+
+<!-- ==================== CHANGE PASSWORD ==================== -->
+<div class="ep" id="ep-password"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-put">PUT</span><span class="ep-path">/api/v1/user/password</span><span class="ep-auth a-jwt">JWT</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">修改密码。<b>成功后所有 Refresh Token 全部吊销</b>，需要重新登录。</p>
+  <h4>请求体 (JSON)</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>old_password</td><td>string</td><td><span class="r">必填</span></td><td>旧密码</td></tr>
+    <tr><td>new_password</td><td>string</td><td><span class="r">必填</span></td><td>新密码，6-64 字符</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>{"old_password":"your-password","new_password":"newPassword456"}</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200  {"code":0,"message":"密码修改成功","data":null}</pre>
+  <h4>错误响应</h4>
+  <pre>HTTP 400  {"code":10001,"message":"旧密码错误","data":null}</pre>
+  <div class="test-row"><textarea id="bb-pass">{"old_password":"your-password","new_password":"newPass456"}</textarea></div>
+  <button class="test-btn" onclick="test('PUT','/api/v1/user/password','bb-pass')">▶ 测试</button>
+  <div class="test-result" id="r-pass"></div>
+</div></div>
+
+<!-- ==================== HEARTBEAT ==================== -->
+<div class="ep" id="ep-heartbeat"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-post">POST</span><span class="ep-path">/api/v1/heartbeat</span><span class="ep-auth a-jwt">JWT</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">客户端心跳上报（建议每 1 分钟）。服务端记录到 heartbeat_logs 表，并在响应中告知是否有新版本。</p>
+  <h4>请求体 (JSON)</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>device_id</td><td>string</td><td><span class="r">必填</span></td><td>设备唯一标识</td></tr>
+    <tr><td>platform</td><td>string</td><td><span class="o">可选</span></td><td>平台: windows / mac / linux</td></tr>
+    <tr><td>app_version</td><td>string</td><td><span class="o">可选</span></td><td>客户端当前版本</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>{"device_id":"dev-001","platform":"windows","app_version":"v1.0.0"}</pre>
+  <h4>成功响应</h4>
+  <pre>// 有新版本
+HTTP 200
+{"code":0,"data":{"has_new_version":true,"latest_version_name":"v1.0.1","is_force_update":false}}
+
+// 无新版本
+HTTP 200
+{"code":0,"data":{"has_new_version":false,"is_force_update":false}}</pre>
+  <div class="test-row"><textarea id="bb-hb">{"device_id":"dev-001","platform":"windows","app_version":"v1.0.0"}</textarea></div>
+  <button class="test-btn" onclick="test('POST','/api/v1/heartbeat','bb-hb')">▶ 测试</button>
+  <div class="test-result" id="r-hb"></div>
+</div></div>
+
+<!-- ==================== CONTROL STREAM ==================== -->
+<div class="ep" id="ep-control-stream"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-get">GET</span><span class="ep-path">/api/v1/control/stream</span><span class="ep-auth a-jwt">JWT</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">按当前用户隔离的 SSE 实时控制流。账号状态、使用期或板块权限变化后立即通知客户端；客户端收到通知后必须通过心跳接口确认最终授权。</p>
+  <h4>事件示例</h4>
+  <pre>event: control<br>data: {"type":"access_changed","issued_at":"2026-07-22T10:00:00Z"}</pre>
+  <p style="color:var(--text2);font-size:13px">请使用 curl -N 或流式 HTTP 客户端测试；普通接口测试按钮不适用于长连接。</p>
+</div></div>
+
+<!-- ==================== ADMIN: LIST USERS ==================== -->
+<div class="ep" id="ep-admin-users"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-get">GET</span><span class="ep-path">/api/v1/admin/users</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">获取用户列表（分页、搜索、按状态筛选）。需要 admin 角色。</p>
+  <h4>Query 参数</h4>
+  <table class="pt">
+    <tr><th>参数</th><th>类型</th><th>默认</th><th>说明</th></tr>
+    <tr><td>page</td><td>int</td><td>1</td><td>页码</td></tr>
+    <tr><td>page_size</td><td>int</td><td>20</td><td>每页条数</td></tr>
+    <tr><td>keyword</td><td>string</td><td>(空)</td><td>匹配 username / nickname / email</td></tr>
+    <tr><td>status</td><td>int</td><td>(空)</td><td>0=禁用, 1=正常</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>GET /api/v1/admin/users
+GET /api/v1/admin/users?keyword=admin&status=1&page=1&page_size=10</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200
+{"code":0,"data":{"items":[{
+  "id":1,"username":"admin","email":null,"nickname":"管理员",
+  "avatar_url":null,"status":1,
+  "last_login_at":"2026-07-04T09:06:33Z",
+  "created_at":"2026-07-04 09:06:16","updated_at":"2026-07-04 09:06:16",
+  "RoleNames":"admin"
+}],"total":1,"page":1,"page_size":20}}</pre>
+  <h4>错误响应</h4>
+  <pre>// 非 admin 用户
+HTTP 403  {"code":10003,"message":"无操作权限","data":null}</pre>
+  <button class="test-btn" onclick="test('GET','/api/v1/admin/users')">▶ 测试</button>
+  <div class="test-result" id="r-a-users"></div>
+</div></div>
+
+<!-- ==================== ADMIN: UPDATE USER STATUS ==================== -->
+<div class="ep" id="ep-admin-user-status"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-put">PUT</span><span class="ep-path">/api/v1/admin/users/{id}/status</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">启用或禁用用户。禁用后用户无法登录（返回"账号已被禁用"）。</p>
+  <h4>URL 参数</h4>
+  <p style="font-size:12px;color:var(--text2)"><code>{id}</code> — 用户 ID</p>
+  <h4>请求体 (JSON)</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>status</td><td>int</td><td><span class="r">必填</span></td><td>0=禁用, 1=启用</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>PUT /api/v1/admin/users/2/status
+{"status":0}</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200  {"code":0,"message":"状态修改成功","data":null}</pre>
+  <h4>错误响应</h4>
+  <pre>HTTP 404  {"code":10004,"message":"用户不存在","data":null}</pre>
+  <div class="test-row"><input id="in-uid-s" value="2" style="width:70px" /><textarea id="bb-uid-s">{"status":0}</textarea></div>
+  <button class="test-btn" onclick="test('PUT','/api/v1/admin/users/'+document.getElementById('in-uid-s').value+'/status','bb-uid-s')">▶ 测试</button>
+  <div class="test-result" id="r-uid-s"></div>
+</div></div>
+
+<!-- ==================== ADMIN: USER ROLES ==================== -->
+<div class="ep" id="ep-admin-user-roles"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-post">POST</span><span class="ep-path">/api/v1/admin/users/{id}/roles</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">分配用户角色。<b>替换模式</b>：全量替换用户当前所有角色。传空数组清空所有角色。</p>
+  <h4>URL 参数</h4>
+  <p style="font-size:12px;color:var(--text2)"><code>{id}</code> — 用户 ID</p>
+  <h4>请求体 (JSON)</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>role_ids</td><td>int[]</td><td><span class="r">必填</span></td><td>角色 ID 数组。role_id=1 为 admin, 2 为 user。传 [] 清空</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>POST /api/v1/admin/users/2/roles
+{"role_ids":[2]}
+
+// 提升为管理员
+{"role_ids":[1,2]}
+
+// 清空所有角色（用户失去一切权限）
+{"role_ids":[]}</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200  {"code":0,"message":"角色分配成功","data":null}</pre>
+  <div class="test-row"><input id="in-uid-r" value="2" style="width:70px" /><textarea id="bb-uid-r">{"role_ids":[2]}</textarea></div>
+  <button class="test-btn" onclick="test('POST','/api/v1/admin/users/'+document.getElementById('in-uid-r').value+'/roles','bb-uid-r')">▶ 测试</button>
+  <div class="test-result" id="r-uid-r"></div>
+</div></div>
+
+<!-- ==================== ADMIN: LIST ROLES ==================== -->
+<div class="ep" id="ep-admin-roles"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-get">GET</span><span class="ep-path">/api/v1/admin/roles</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">获取所有角色列表，每个角色包含其拥有的权限列表。</p>
+  <h4>成功响应</h4>
+  <pre>HTTP 200
+{"code":0,"data":[{
+  "id":1,"name":"admin","description":"系统管理员",
+  "created_at":"2026-07-04 09:06:16",
+  "permissions":[
+    {"id":1,"code":"user:list","name":"查看用户列表"},
+    {"id":2,"code":"user:update","name":"修改用户状态"},
+    ...
+  ]
+},{
+  "id":2,"name":"user","description":"普通用户",
+  "permissions":[
+    {"id":7,"code":"announcement:list","name":"查看公告列表"},
+    {"id":13,"code":"version:list","name":"查看版本列表"}
+  ]
+}]}</pre>
+  <button class="test-btn" onclick="test('GET','/api/v1/admin/roles')">▶ 测试</button>
+  <div class="test-result" id="r-a-roles"></div>
+</div></div>
+
+<!-- ==================== ADMIN: CREATE ROLE ==================== -->
+<div class="ep" id="ep-admin-roles-create"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-post">POST</span><span class="ep-path">/api/v1/admin/roles</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">创建新角色并设置权限。</p>
+  <h4>请求体 (JSON)</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>name</td><td>string</td><td><span class="r">必填</span></td><td>角色名（唯一）</td></tr>
+    <tr><td>description</td><td>string</td><td><span class="o">可选</span></td><td>角色说明</td></tr>
+    <tr><td>permission_ids</td><td>int[]</td><td><span class="o">可选</span></td><td>权限 ID 列表。<a href="#ep-admin-perms" style="color:var(--blue)">查看权限码→</a></td></tr>
+  </table>
+  <h4>权限 ID 速查</h4>
+  <table class="pt" style="font-size:10px">
+    <tr><td>1</td><td>user:list</td><td>2</td><td>user:update</td><td>3</td><td>user:role:assign</td><td>4</td><td>role:list</td></tr>
+    <tr><td>5</td><td>role:create</td><td>6</td><td>role:update</td><td>7</td><td>role:delete</td><td>8</td><td>announcement:list</td></tr>
+    <tr><td>9</td><td>announcement:create</td><td>10</td><td>announcement:update</td><td>11</td><td>announcement:delete</td><td>12</td><td>announcement:publish</td></tr>
+    <tr><td>13</td><td>version:list</td><td>14</td><td>version:create</td><td>15</td><td>version:update</td><td>16</td><td>version:delete</td></tr>
+  </table><br>
+  <h4>请求示例</h4>
+  <pre>{"name":"editor","description":"内容编辑","permission_ids":[8,9,10,11,12]}</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200  → 返回创建的完整角色对象（含权限列表）</pre>
+  <div class="test-row"><textarea id="bb-r-create">{"name":"editor","description":"编辑","permission_ids":[8,9,10,11,12]}</textarea></div>
+  <button class="test-btn" onclick="test('POST','/api/v1/admin/roles','bb-r-create')">▶ 测试</button>
+  <div class="test-result" id="r-r-create"></div>
+</div></div>
+
+<!-- ==================== ADMIN: UPDATE ROLE ==================== -->
+<div class="ep" id="ep-admin-roles-update"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-put">PUT</span><span class="ep-path">/api/v1/admin/roles/{id}</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">更新角色信息或权限（替换模式）。</p>
+  <h4>URL 参数</h4>
+  <p style="font-size:12px;color:var(--text2)"><code>{id}</code> — 角色 ID</p>
+  <h4>请求体 (JSON) — 所有字段可选</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>name</td><td>string</td><td><span class="o">可选</span></td><td>新角色名</td></tr>
+    <tr><td>description</td><td>string</td><td><span class="o">可选</span></td><td>新描述</td></tr>
+    <tr><td>permission_ids</td><td>int[]</td><td><span class="o">可选</span></td><td>新权限列表（替换全部）</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>PUT /api/v1/admin/roles/3
+{"name":"senior-editor","permission_ids":[8,9,10,11,12]}</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200  → 返回更新后的完整角色对象</pre>
+  <div class="test-row"><input id="in-rid-u" value="3" style="width:70px" /><textarea id="bb-r-update">{"name":"senior-editor","permission_ids":[8,9,10,11,12]}</textarea></div>
+  <button class="test-btn" onclick="test('PUT','/api/v1/admin/roles/'+document.getElementById('in-rid-u').value,'bb-r-update')">▶ 测试</button>
+  <div class="test-result" id="r-r-update"></div>
+</div></div>
+
+<!-- ==================== ADMIN: DELETE ROLE ==================== -->
+<div class="ep" id="ep-admin-roles-delete"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-del">DEL</span><span class="ep-path">/api/v1/admin/roles/{id}</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">删除角色（<b>不能删除 admin 角色</b>）。关联的 user_roles 和 role_permissions 自动 CASCADE 删除。</p>
+  <h4>URL 参数</h4>
+  <p style="font-size:12px;color:var(--text2)"><code>{id}</code> — 角色 ID</p>
+  <h4>成功响应</h4>
+  <pre>HTTP 200  {"code":0,"message":"删除成功","data":null}</pre>
+  <h4>错误响应</h4>
+  <pre>HTTP 403  {"code":10003,"message":"不能删除admin角色","data":null}
+HTTP 404  {"code":10004,"message":"角色不存在","data":null}</pre>
+  <div class="test-row"><input id="in-rid-d" value="3" style="width:70px" /></div>
+  <button class="test-btn" onclick="test('DELETE','/api/v1/admin/roles/'+document.getElementById('in-rid-d').value)">▶ 测试</button>
+  <div class="test-result" id="r-r-del"></div>
+</div></div>
+
+<!-- ==================== ADMIN: PERMISSIONS ==================== -->
+<div class="ep" id="ep-admin-perms"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-get">GET</span><span class="ep-path">/api/v1/admin/permissions</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">获取全部 16 个预置权限码。用于角色管理页面的权限选择器。</p>
+  <h4>成功响应</h4>
+  <pre>HTTP 200
+{"code":0,"data":[
+  {"id":1,"code":"user:list","name":"查看用户列表","description":"查看所有注册用户"},
+  {"id":2,"code":"user:update","name":"修改用户状态","description":"启用或禁用用户"},
+  {"id":3,"code":"user:role:assign","name":"分配用户角色","description":"为用户分配角色"},
+  {"id":4,"code":"role:list","name":"查看角色列表","description":"查看所有角色"},
+  {"id":5,"code":"role:create","name":"创建角色"},
+  {"id":6,"code":"role:update","name":"修改角色"},
+  {"id":7,"code":"role:delete","name":"删除角色"},
+  {"id":8,"code":"announcement:list","name":"查看公告列表"},
+  {"id":9,"code":"announcement:create","name":"创建公告"},
+  {"id":10,"code":"announcement:update","name":"修改公告"},
+  {"id":11,"code":"announcement:delete","name":"删除公告"},
+  {"id":12,"code":"announcement:publish","name":"发布公告","description":"发布或下架公告"},
+  {"id":13,"code":"version:list","name":"查看版本列表"},
+  {"id":14,"code":"version:create","name":"发布新版本"},
+  {"id":15,"code":"version:update","name":"修改版本"},
+  {"id":16,"code":"version:delete","name":"删除版本"}
+]}</pre>
+  <button class="test-btn" onclick="test('GET','/api/v1/admin/permissions')">▶ 测试</button>
+  <div class="test-result" id="r-a-perms"></div>
+</div></div>
+
+<!-- ==================== ADMIN: LIST ANNOUNCEMENTS ==================== -->
+<div class="ep" id="ep-admin-ann-list"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-get">GET</span><span class="ep-path">/api/v1/admin/announcements</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">管理端公告列表（含草稿和已下架）。参数与公开接口相同。</p>
+  <h4>Query 参数</h4>
+  <table class="pt">
+    <tr><th>参数</th><th>类型</th><th>默认</th><th>说明</th></tr>
+    <tr><td>page</td><td>int</td><td>1</td><td></td></tr>
+    <tr><td>page_size</td><td>int</td><td>20</td><td></td></tr>
+    <tr><td>level</td><td>string</td><td>(空)</td><td>info / warning / critical</td></tr>
+  </table>
+  <button class="test-btn" onclick="test('GET','/api/v1/admin/announcements')">▶ 测试</button>
+  <div class="test-result" id="r-a-anns"></div>
+</div></div>
+
+<!-- ==================== ADMIN: CREATE ANNOUNCEMENT ==================== -->
+<div class="ep" id="ep-admin-ann-create"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-post">POST</span><span class="ep-path">/api/v1/admin/announcements</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">创建公告（默认草稿状态，需调用 publish 接口发布）。</p>
+  <h4>请求体 (JSON)</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>title</td><td>string</td><td><span class="r">必填</span></td><td>公告标题</td></tr>
+    <tr><td>content</td><td>string</td><td><span class="r">必填</span></td><td>公告内容</td></tr>
+    <tr><td>level</td><td>string</td><td><span class="o">可选</span></td><td>级别: info(默认) / warning / critical</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>{"title":"系统维护通知","content":"将于7月10日凌晨2:00-4:00维护","level":"warning"}</pre>
+  <h4>成功响应</h4>
+  <pre>HTTP 200  → 返回创建的公告对象（含 id, is_published:0）</pre>
+  <div class="test-row"><textarea id="bb-ann-c">{"title":"测试公告","content":"这是公告内容","level":"info"}</textarea></div>
+  <button class="test-btn" onclick="test('POST','/api/v1/admin/announcements','bb-ann-c')">▶ 测试</button>
+  <div class="test-result" id="r-ann-c"></div>
+</div></div>
+
+<!-- ==================== ADMIN: UPDATE ANNOUNCEMENT ==================== -->
+<div class="ep" id="ep-admin-ann-update"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-put">PUT</span><span class="ep-path">/api/v1/admin/announcements/{id}</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">编辑公告。所有字段可选，只更新传入的非空字段。</p>
+  <h4>请求体 (JSON) — 所有字段可选</h4>
+  <table class="pt">
+    <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>title</td><td>string</td><td><span class="o">可选</span></td><td>新标题</td></tr>
+    <tr><td>content</td><td>string</td><td><span class="o">可选</span></td><td>新内容</td></tr>
+    <tr><td>level</td><td>string</td><td><span class="o">可选</span></td><td>新级别</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>PUT /api/v1/admin/announcements/1
+{"title":"修改后的标题","level":"critical"}</pre>
+  <div class="test-row"><input id="in-aid-u" value="1" style="width:70px" /><textarea id="bb-ann-u">{"title":"修改后的标题","level":"warning"}</textarea></div>
+  <button class="test-btn" onclick="test('PUT','/api/v1/admin/announcements/'+document.getElementById('in-aid-u').value,'bb-ann-u')">▶ 测试</button>
+  <div class="test-result" id="r-ann-u"></div>
+</div></div>
+
+<!-- ==================== ADMIN: DELETE ANNOUNCEMENT ==================== -->
+<div class="ep" id="ep-admin-ann-del"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-del">DEL</span><span class="ep-path">/api/v1/admin/announcements/{id}</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">硬删除公告，不可恢复。</p>
+  <h4>URL 参数</h4>
+  <p style="font-size:12px;color:var(--text2)"><code>{id}</code> — 公告 ID</p>
+  <h4>错误响应</h4>
+  <pre>HTTP 404  {"code":10004,"message":"公告不存在","data":null}</pre>
+  <div class="test-row"><input id="in-aid-d" value="1" style="width:70px" /></div>
+  <button class="test-btn" onclick="test('DELETE','/api/v1/admin/announcements/'+document.getElementById('in-aid-d').value)">▶ 测试</button>
+  <div class="test-result" id="r-ann-d"></div>
+</div></div>
+
+<!-- ==================== ADMIN: PUBLISH ==================== -->
+<div class="ep" id="ep-admin-ann-pub"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-post">POST</span><span class="ep-path">/api/v1/admin/announcements/{id}/publish</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">发布公告。将 is_published 设为 1，记录发布时间。公告将出现在公开列表接口中。</p>
+  <div class="test-row"><input id="in-aid-p" value="1" style="width:70px" /></div>
+  <button class="test-btn" onclick="test('POST','/api/v1/admin/announcements/'+document.getElementById('in-aid-p').value+'/publish')">▶ 测试</button>
+  <div class="test-result" id="r-ann-p"></div>
+</div></div>
+
+<!-- ==================== ADMIN: UNPUBLISH ==================== -->
+<div class="ep" id="ep-admin-ann-unpub"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-post">POST</span><span class="ep-path">/api/v1/admin/announcements/{id}/unpublish</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">下架公告。将 is_published 设为 0，公告从公开列表消失。</p>
+  <div class="test-row"><input id="in-aid-up" value="1" style="width:70px" /></div>
+  <button class="test-btn" onclick="test('POST','/api/v1/admin/announcements/'+document.getElementById('in-aid-up').value+'/unpublish')">▶ 测试</button>
+  <div class="test-result" id="r-ann-up"></div>
+</div></div>
+
+<!-- ==================== ADMIN: LIST VERSIONS ==================== -->
+<div class="ep" id="ep-admin-ver-list"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-get">GET</span><span class="ep-path">/api/v1/admin/versions</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">版本列表（分页、按平台筛选）。</p>
+  <h4>Query 参数</h4>
+  <table class="pt">
+    <tr><th>参数</th><th>类型</th><th>默认</th><th>说明</th></tr>
+    <tr><td>page</td><td>int</td><td>1</td><td></td></tr>
+    <tr><td>page_size</td><td>int</td><td>20</td><td></td></tr>
+    <tr><td>platform</td><td>string</td><td>(空)</td><td>windows / mac / linux / android / ios</td></tr>
+  </table>
+  <button class="test-btn" onclick="test('GET','/api/v1/admin/versions')">▶ 测试</button>
+  <div class="test-result" id="r-a-vers"></div>
+</div></div>
+
+<!-- ==================== ADMIN: CREATE VERSION ==================== -->
+<div class="ep" id="ep-admin-ver-create"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-post">POST</span><span class="ep-path">/api/v1/admin/versions</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">发布新版本。创建后<b>自动</b>将同平台其他版本的 is_latest 设为 0。</p>
+  <h4>请求体 (JSON)</h4>
+  <table class="pt">
+    <tr><th>字段</td><th>类型</th><th>必填</th><th>说明</th></tr>
+    <tr><td>platform</td><td>string</td><td><span class="r">必填</span></td><td>windows / mac / linux / android / ios</td></tr>
+    <tr><td>version_code</td><td>int</td><td><span class="r">必填</span></td><td>数字版本号（用于比较大小），如 2026070501</td></tr>
+    <tr><td>version_name</td><td>string</td><td><span class="r">必填</span></td><td>显示版本号，如 v1.0.2</td></tr>
+    <tr><td>title</td><td>string</td><td><span class="r">必填</span></td><td>更新标题，如 "v1.0.2 更新"</td></tr>
+    <tr><td>description</td><td>string</td><td><span class="o">可选</span></td><td>更新说明文本</td></tr>
+    <tr><td>download_url</td><td>string</td><td><span class="o">可选</span></td><td>下载地址</td></tr>
+    <tr><td>file_size</td><td>int</td><td><span class="o">可选</span></td><td>文件大小（字节）</td></tr>
+    <tr><td>file_hash</td><td>string</td><td><span class="o">可选</span></td><td>SHA256 校验值</td></tr>
+    <tr><td>is_force</td><td>bool</td><td><span class="o">可选</span></td><td>是否强制更新，默认 false</td></tr>
+  </table>
+  <h4>请求示例</h4>
+  <pre>{"platform":"windows","version_code":2026070501,"version_name":"v1.0.2","title":"v1.0.2 更新","description":"- 修复bug\n- 性能优化","is_force":false}</pre>
+  <div class="test-row"><textarea id="bb-ver-c" style="min-height:80px">{"platform":"windows","version_code":2026070501,"version_name":"v1.0.2","title":"v1.0.2 更新","description":"修复若干问题"}</textarea></div>
+  <button class="test-btn" onclick="test('POST','/api/v1/admin/versions','bb-ver-c')">▶ 测试</button>
+  <div class="test-result" id="r-ver-c"></div>
+</div></div>
+
+<!-- ==================== ADMIN: UPDATE VERSION ==================== -->
+<div class="ep" id="ep-admin-ver-update"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-put">PUT</span><span class="ep-path">/api/v1/admin/versions/{id}</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">编辑版本信息。所有字段可选。<b>不支持修改 platform 和 version_code</b>。（如果需要，请删除后重新创建。）</p>
+  <h4>请求体 (JSON) — 所有字段可选</h4>
+  <table class="pt">
+    <tr><td>title</td><td>string</td><td><span class="o">可选</span></td><td></td></tr>
+    <tr><td>description</td><td>string</td><td><span class="o">可选</span></td><td></td></tr>
+    <tr><td>download_url</td><td>string</td><td><span class="o">可选</span></td><td></td></tr>
+    <tr><td>file_size</td><td>int</td><td><span class="o">可选</span></td><td></td></tr>
+    <tr><td>file_hash</td><td>string</td><td><span class="o">可选</span></td><td></td></tr>
+    <tr><td>is_force</td><td>int</td><td><span class="o">可选</span></td><td>0 或 1</td></tr>
+    <tr><td>is_latest</td><td>int</td><td><span class="o">可选</span></td><td>设为 1 来手动标记为最新</td></tr>
+  </table>
+  <div class="test-row"><input id="in-vid-u" value="1" style="width:70px" /><textarea id="bb-ver-u">{"is_force":true,"description":"紧急安全更新"}</textarea></div>
+  <button class="test-btn" onclick="test('PUT','/api/v1/admin/versions/'+document.getElementById('in-vid-u').value,'bb-ver-u')">▶ 测试</button>
+  <div class="test-result" id="r-ver-u"></div>
+</div></div>
+
+<!-- ==================== ADMIN: DELETE VERSION ==================== -->
+<div class="ep" id="ep-admin-ver-del"><div class="ep-h" onclick="this.parentElement.querySelector('.ep-body').classList.toggle('open')">
+  <span class="method m-del">DEL</span><span class="ep-path">/api/v1/admin/versions/{id}</span><span class="ep-auth a-admin">admin</span>
+</div><div class="ep-body">
+  <p style="color:var(--text2);font-size:13px">删除版本。</p>
+  <div class="test-row"><input id="in-vid-d" value="1" style="width:70px" /></div>
+  <button class="test-btn" onclick="test('DELETE','/api/v1/admin/versions/'+document.getElementById('in-vid-d').value)">▶ 测试</button>
+  <div class="test-result" id="r-ver-d"></div>
+</div></div>
+
+</div>
+
+<script>
+var B = window.location.origin;
+document.getElementById('gtok').value = sessionStorage.getItem('tok')||'';
+fetch(B+'/api/v1/health').then(r=>r.json()).then(d=>{
+  var s=document.getElementById('srv');
+  s.className='status-dot on'; s.textContent='在线 '+d.data.version;
+}).catch(function(){
+  var s=document.getElementById('srv');
+  s.className='status-dot'; s.style.color='var(--red)'; s.textContent='离线';
+});
+
+function test(method,path,bodyId,extract){
+  var rid='r-'+path.replace(/[^a-z0-9一-龥]/gi,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').substring(0,50);
+  // Find the result div inside the same endpoint
+  var ep=event.target.closest('.ep');
+  var rd=ep?ep.querySelector('.test-result'):null;
+  if(!rd){ console.warn('not found: '+rid); return; }
+  rd.className='test-result show';
+  rd.innerHTML='<pre style="color:var(--text2)">请求中...</pre>';
+
+  var h={'Content-Type':'application/json'};
+  var t=document.getElementById('gtok').value.trim();
+  if(t) h['Authorization']='Bearer '+t;
+  var body=null;
+  if(bodyId){ body=document.getElementById(bodyId).value.trim(); }
+
+  fetch(B+path,{method:method,headers:h,body:(body&&method!='GET')?body:null})
+  .then(function(r){return r.text().then(function(tx){return{status:r.status,text:tx}})})
+  .then(function(r){
+    var pre=rd.querySelector('pre');
+    pre.textContent=(r.status<300?r.text:'HTTP '+r.status+'\n'+r.text);
+    pre.style.borderColor=(r.status<300?'var(--green)':'var(--red)');
+    if(extract){
+      try{
+        var d=JSON.parse(r.text);
+        if(d.code===0&&d.data&&d.data.access_token){
+          document.getElementById('gtok').value=d.data.access_token;
+          sessionStorage.setItem('tok',d.data.access_token);
+          pre.textContent+='\n\n✓ 登录成功，Token 已自动提取。角色: '+d.data.user.roles.join(', ');
+        }
+      }catch(e){}
+    }
+  }).catch(function(e){
+    var pre=rd.querySelector('pre');
+    pre.textContent='网络错误: '+e.message;
+    pre.style.borderColor='var(--red)';
+  });
+}
+</script>
+</body>
+</html>

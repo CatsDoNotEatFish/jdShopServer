@@ -23,6 +23,21 @@
 
 索引：`idx_users_username(username)`、`idx_users_status(status)`
 
+### user_access_control
+
+账号使用期限与三个产品板块的开关。权限按账号保存，不跟随 `user` 角色自动扩大。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| user_id | INTEGER PK/FK | 对应用户 |
+| competitor_monitor | INTEGER NOT NULL DEFAULT 1 | 竞品监控是否可用 |
+| merchant_backend | INTEGER NOT NULL DEFAULT 0 | 商家后台是否可用 |
+| analysis_center | INTEGER NOT NULL DEFAULT 0 | 分析中心是否可用 |
+| expires_at | TEXT | 到期时间，NULL 表示长期有效 |
+| updated_at | TEXT NOT NULL | 最近修改时间 |
+
+新注册账号默认开放竞品监控，商家后台和分析中心关闭，默认使用期 30 天。
+
 ### refresh_tokens
 
 刷新令牌表，用于 JWT Refresh Token 管理。
@@ -37,6 +52,18 @@
 | created_at | TEXT NOT NULL DEFAULT (datetime('now')) | |
 
 索引：`idx_refresh_tokens_user(user_id)`、`idx_refresh_tokens_hash(token_hash)`
+
+### user_auth_versions
+
+账号 Access Token 版本表，用于立即并永久撤销禁用前签发的 JWT。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| user_id | INTEGER PK, FK → users.id | 账号 ID，删除账号时级联删除 |
+| version | INTEGER NOT NULL DEFAULT 1 | 当前授权版本；禁用账号或修改密码时递增 |
+| updated_at | TEXT NOT NULL | 最近更新时间 |
+
+旧 Token 未携带版本时按版本 1 兼容；账号首次禁用后版本至少为 2，因此旧 Token 在重新启用后仍无法使用。
 
 ### roles
 
@@ -201,6 +228,6 @@ PRAGMA temp_store=MEMORY;
 ## 备份策略
 
 - SQLite 备份使用 `VACUUM INTO` 或 `.backup` 命令
-- 建议每天凌晨自动备份到 `backups/app-YYYY-MM-DD.db`
+- 建议每天凌晨自动备份到 `backups/app-YYYY-MM-DD-HHMMSS.db`；时间精确到秒，避免同一天的定时备份和手工备份重名
 - 保留最近 7 天备份
 - 备份文件可通过 `sqlite3` 命令行直接读取

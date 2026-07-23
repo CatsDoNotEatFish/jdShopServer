@@ -1,6 +1,9 @@
 # Build
 jdshop-server.exe
 jdshop-server
+release/
+*.bak
+*~
 
 # Database
 data/

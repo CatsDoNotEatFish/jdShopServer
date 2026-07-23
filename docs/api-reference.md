@@ -264,6 +264,20 @@ curl -X POST http://127.0.0.1:8080/api/v1/auth/refresh \
 
 ---
 
+## 4.1 退出登录
+
+### POST /api/v1/auth/logout
+
+无需 Access Token。提交当前 Refresh Token 后立即吊销该登录会话；重复调用同样返回成功。
+
+```json
+{
+  "refresh_token": "C33IPlK98wiuA9Ax5xdOg..."
+}
+```
+
+---
+
 ## 5. 个人信息
 
 ### GET /api/v1/user/profile
@@ -363,7 +377,7 @@ curl -X PUT http://127.0.0.1:8080/api/v1/user/password \
 
 ### POST /api/v1/heartbeat
 
-需要鉴权。建议客户端每 5 分钟上报一次。
+需要鉴权。建议客户端每 1 分钟上报一次。
 
 **请求体:**
 
@@ -371,7 +385,8 @@ curl -X PUT http://127.0.0.1:8080/api/v1/user/password \
 {
   "device_id": "device-uuid-xxx",
   "platform": "windows",
-  "app_version": "v1.0.0"
+  "app_version": "0.2.2",
+  "app_version_code": 2026072202
 }
 ```
 
@@ -380,6 +395,7 @@ curl -X PUT http://127.0.0.1:8080/api/v1/user/password \
 | device_id | 是 | 设备唯一标识 |
 | platform | 否 | 平台: windows/mac/linux |
 | app_version | 否 | 客户端版本号 |
+| app_version_code | 否 | 客户端数字版本码，用于可靠比较更新 |
 
 **curl 示例:**
 
@@ -387,7 +403,7 @@ curl -X PUT http://127.0.0.1:8080/api/v1/user/password \
 curl -X POST http://127.0.0.1:8080/api/v1/heartbeat \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"device_id":"dev-001","platform":"windows","app_version":"v1.0.0"}'
+  -d '{"device_id":"dev-001","platform":"windows","app_version":"0.2.2","app_version_code":2026072202}'
 ```
 
 **成功返回 (200):**
@@ -398,13 +414,43 @@ curl -X POST http://127.0.0.1:8080/api/v1/heartbeat \
   "message": "success",
   "data": {
     "has_new_version": true,
-    "latest_version_name": "v1.0.1",
-    "is_force_update": false
+    "latest_version_code": 2026072302,
+    "latest_version_name": "0.2.3",
+    "latest_download_url": "https://jdshop-client-releases-hk.oss-cn-hongkong.aliyuncs.com/JDMonitor-0.2.3-win-x64.zip",
+    "latest_file_hash": "sha256:a357ced14dbba3257a4cfddbe6334552e0ff20fe6aac0803bc309bea77d2b942",
+    "latest_file_size": 134772190,
+    "is_force_update": false,
+    "access": {
+      "allowed": true,
+      "reason": "active",
+      "expires_at": "2026-12-31T23:59:59Z",
+      "remaining_seconds": 86400,
+      "lease_seconds": 600,
+      "modules": {
+        "competitor_monitor": true,
+        "merchant_backend": false,
+        "analysis_center": false
+      }
+    }
   }
 }
 ```
 
-如果 `has_new_version` 为 true，客户端应提示用户更新。`is_force_update` 为 true 表示强制更新。
+如果 `has_new_version` 为 true，客户端应提示用户更新。`is_force_update` 为 true 表示强制更新。服务端同时返回最新版本码、下载地址、文件大小和 SHA-256，客户端完成完整包校验后再替换程序。
+
+客户端每 1 分钟上报一次心跳。账号到期时心跳返回 HTTP 200 且 `access.allowed=false`。管理员禁用账号时，账号授权版本立即递增，当前及此前签发的 Access Token 请求返回 HTTP 401；全部 Refresh Token 同时吊销。客户端必须清除本地 Token、终止未完成任务并回到登录页。账号重新启用后，旧 Token 仍然无效，必须重新登录。
+
+### GET /api/v1/control/stream
+
+需要 JWT。该接口建立按当前登录用户隔离的 Server-Sent Events（SSE）长连接。管理员修改账号启停状态、使用期或三个产品板块权限后，服务端立即发送通知；通知只用于唤醒客户端，客户端必须随后调用心跳接口获取权威授权结果。
+
+```bash
+curl -N --http1.1 http://127.0.0.1:8080/api/v1/control/stream \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: text/event-stream"
+```
+
+事件示例为 `event: control`，JSON 数据包含 `type` 和 `issued_at`。`type` 可能为 `connected`、`access_changed` 或 `account_status_changed`。服务端每 15 秒发送 SSE 注释保活；客户端断线后应自动重连。此接口不得经过 30 秒通用请求超时，Nginx 也必须关闭 `proxy_buffering` 并配置长读取超时。
 
 ---
 
@@ -528,7 +574,7 @@ curl "http://127.0.0.1:8080/api/v1/version/latest?platform=windows&current_versi
 
 ## 9. 管理员接口
 
-以下接口需要 admin 角色。先登录获取 admin Token:
+以下接口仅允许 `SUPER_ADMIN_USERNAME` 指定的唯一主管理员（默认 `admin`）访问，并且该账号必须持有内置 `admin` 角色。普通注册账号即使误获 `admin` 角色也会返回 403。先登录获取主管理员 Token：
 
 ```bash
 TOKEN=$(curl -s -X POST http://127.0.0.1:8080/api/v1/auth/login \
@@ -575,6 +621,10 @@ curl "http://127.0.0.1:8080/api/v1/admin/users?keyword=admin&status=1" \
         "avatar_url": null,
         "status": 1,
         "last_login_at": "2026-07-04T09:06:33Z",
+        "last_heartbeat_at": "2026-07-22T09:30:00Z",
+        "heartbeat_device_id": "2dbf6c95-...",
+        "heartbeat_platform": "windows",
+        "heartbeat_app_version": "0.2.3",
         "created_at": "2026-07-04 09:06:16",
         "updated_at": "2026-07-04 09:06:16",
         "RoleNames": "admin"
@@ -587,11 +637,11 @@ curl "http://127.0.0.1:8080/api/v1/admin/users?keyword=admin&status=1" \
 }
 ```
 
-注意: `RoleNames` 字段是逗号分隔的角色名（来自 SQL GROUP_CONCAT）。
+注意: `RoleNames` 字段是逗号分隔的角色名（来自 SQL GROUP_CONCAT）。列表同时返回该账号最近一次心跳的时间、设备、平台和客户端版本，管理控制台据此以 10 分钟为窗口显示在线状态。
 
 #### PUT /api/v1/admin/users/:id/status
 
-启用/禁用用户。
+启用/禁用普通用户。禁用时递增账号授权版本并吊销全部 Refresh Token；重新启用不会恢复旧 Token，用户必须重新登录。主管理员账号受保护，不能调用此接口禁用；其账号授权固定为长期有效并开放全部三个产品板块。
 
 **请求体:**
 
@@ -618,7 +668,7 @@ curl -X PUT http://127.0.0.1:8080/api/v1/admin/users/2/status \
 
 #### POST /api/v1/admin/users/:id/roles
 
-分配用户角色（替换模式，全量替换非追加）。
+分配普通用户角色（替换模式，全量替换非追加）。内置 `admin` 角色为主管理员专用，不能分配给普通账号；主管理员自身的角色也不能修改。
 
 **请求体:**
 
@@ -635,6 +685,19 @@ curl -X POST http://127.0.0.1:8080/api/v1/admin/users/2/roles \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"role_ids": [2]}'
+```
+
+#### PUT /api/v1/admin/users/:id/access
+
+修改账号使用期和三大产品板块开关。`expires_at` 传 `null` 表示长期有效。
+
+```json
+{
+  "competitor_monitor": true,
+  "merchant_backend": true,
+  "analysis_center": false,
+  "expires_at": "2026-12-31T23:59:59Z"
+}
 ```
 
 ### 9.2 角色管理
@@ -706,7 +769,7 @@ curl -X PUT http://127.0.0.1:8080/api/v1/admin/roles/3 \
 
 #### DELETE /api/v1/admin/roles/:id
 
-删除角色（不能删除 admin 角色）。
+删除角色（内置 admin 角色不能修改或删除）。
 
 #### GET /api/v1/admin/permissions
 
@@ -920,7 +983,7 @@ curl -X DELETE http://127.0.0.1:8080/api/v1/admin/versions/1 \
 {"code": 10002, "message": "未提供认证凭证", "data": null}
 ```
 
-如果非 admin 用户访问管理接口，会返回 403:
+如果用户名不是配置的主管理员，或没有内置 admin 角色，访问管理接口会返回 403：
 
 ```json
 {"code": 10003, "message": "无操作权限", "data": null}
@@ -936,15 +999,18 @@ curl -X DELETE http://127.0.0.1:8080/api/v1/admin/versions/1 \
 | POST | `/api/v1/auth/register` | 无 | 注册 |
 | POST | `/api/v1/auth/login` | 无 | 登录 |
 | POST | `/api/v1/auth/refresh` | 无 | 刷新 Token |
+| POST | `/api/v1/auth/logout` | 无 | 吊销当前 Refresh Token |
 | GET | `/api/v1/user/profile` | JWT | 获取个人信息 |
 | PUT | `/api/v1/user/profile` | JWT | 修改个人信息 |
 | PUT | `/api/v1/user/password` | JWT | 修改密码 |
 | POST | `/api/v1/heartbeat` | JWT | 心跳上报 |
+| GET | `/api/v1/control/stream` | JWT | 账号控制实时事件流（SSE） |
 | GET | `/api/v1/announcements` | 无 | 公开公告列表 |
 | GET | `/api/v1/version/latest` | 无 | 检查最新版本 |
 | GET | `/api/v1/admin/users` | admin | 用户列表 |
 | PUT | `/api/v1/admin/users/:id/status` | admin | 启用/禁用用户 |
 | POST | `/api/v1/admin/users/:id/roles` | admin | 分配角色 |
+| PUT | `/api/v1/admin/users/:id/access` | admin | 设置账号使用期和产品板块 |
 | GET | `/api/v1/admin/roles` | admin | 角色列表 |
 | POST | `/api/v1/admin/roles` | admin | 创建角色 |
 | PUT | `/api/v1/admin/roles/:id` | admin | 更新角色 |

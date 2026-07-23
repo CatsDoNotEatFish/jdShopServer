@@ -38,7 +38,9 @@ func (s *VersionService) Create(req model.CreateVersionRequest) (*model.AppVersi
 		v.FileSize = req.FileSize
 	}
 	if req.IsForce != nil {
-		v.IsForce = *req.IsForce
+		if *req.IsForce {
+			v.IsForce = 1
+		}
 	}
 
 	if err := s.repo.Create(v); err != nil {
@@ -57,10 +59,21 @@ func (s *VersionService) Update(id int64, req model.UpdateVersionRequest) (*mode
 	}
 
 	if err := s.repo.Update(id, req.Title, req.Description, req.DownloadURL,
-		req.FileHash, req.FileSize, req.IsForce, req.IsLatest); err != nil {
+		req.FileHash, req.FileSize, boolInt(req.IsForce), boolInt(req.IsLatest)); err != nil {
 		return nil, err
 	}
 	return s.repo.FindByID(id)
+}
+
+func boolInt(value *bool) *int {
+	if value == nil {
+		return nil
+	}
+	result := 0
+	if *value {
+		result = 1
+	}
+	return &result
 }
 
 func (s *VersionService) Delete(id int64) error {

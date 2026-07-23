@@ -18,6 +18,25 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 	}
 }
 
+// RequireSuperAdmin restricts management routes to the one configured
+// supervisor account. Possessing an admin role alone is intentionally not
+// enough to enter the server console.
+func RequireSuperAdmin(username string) func(http.Handler) http.Handler {
+	if username == "" {
+		username = "admin"
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			roles := GetUserRoles(r.Context())
+			if GetUsername(r.Context()) != username || !slices.Contains(roles, "admin") {
+				writeForbidden(w)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func RequirePermission(perm string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

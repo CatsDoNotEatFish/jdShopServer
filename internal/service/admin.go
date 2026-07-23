@@ -8,20 +8,67 @@ import (
 )
 
 var (
-	ErrRoleNotFound = errors.New("role not found")
+	ErrRoleNotFound        = errors.New("role not found")
+	ErrSuperAdminProtected = errors.New("super admin account is protected")
+	ErrAdminRoleReserved   = errors.New("admin role is reserved for the super admin")
+	ErrAdminRoleProtected  = errors.New("admin role is protected")
 )
 
 type AdminService struct {
-	userRepo *repository.UserRepo
-	roleRepo *repository.RoleRepo
+	userRepo           *repository.UserRepo
+	roleRepo           *repository.RoleRepo
+	accessSvc          *AccessService
+	tokenRepo          *repository.TokenRepo
+	controlHub         *ControlHub
+	superAdminUsername string
 }
 
-func NewAdminService(userRepo *repository.UserRepo, roleRepo *repository.RoleRepo) *AdminService {
-	return &AdminService{userRepo: userRepo, roleRepo: roleRepo}
+func NewAdminService(userRepo *repository.UserRepo, roleRepo *repository.RoleRepo, accessSvc *AccessService, tokenRepo *repository.TokenRepo, controlHub *ControlHub, superAdminUsername string) *AdminService {
+	if superAdminUsername == "" {
+		superAdminUsername = "admin"
+	}
+	return &AdminService{
+		userRepo: userRepo, roleRepo: roleRepo, accessSvc: accessSvc,
+		tokenRepo: tokenRepo, controlHub: controlHub,
+		superAdminUsername: superAdminUsername,
+	}
+}
+
+func (s *AdminService) isSuperAdmin(user *model.User) bool {
+	return user != nil && user.Username == s.superAdminUsername
+}
+
+func (s *AdminService) UpdateUserAccess(userID int64, req model.UpdateUserAccessRequest) (model.AccountAccess, error) {
+	user, err := s.userRepo.FindByID(userID)
+	if err != nil {
+		return model.AccountAccess{}, err
+	}
+	if user == nil {
+		return model.AccountAccess{}, ErrUserNotFound
+	}
+	if s.isSuperAdmin(user) {
+		return model.AccountAccess{}, ErrSuperAdminProtected
+	}
+	access, err := s.accessSvc.Update(user, req)
+	if err == nil {
+		s.controlHub.Publish(userID, "access_changed")
+	}
+	return access, err
 }
 
 func (s *AdminService) ListUsers(page, pageSize int, keyword string, status *int) ([]model.UserWithRoles, int64, error) {
-	return s.userRepo.List(page, pageSize, keyword, status)
+	users, total, err := s.userRepo.List(page, pageSize, keyword, status)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range users {
+		access, accessErr := s.accessSvc.Evaluate(&users[i].User)
+		if accessErr != nil {
+			return nil, 0, accessErr
+		}
+		users[i].Access = access
+	}
+	return users, total, nil
 }
 
 func (s *AdminService) UpdateUserStatus(userID int64, status int) error {
@@ -32,7 +79,19 @@ func (s *AdminService) UpdateUserStatus(userID int64, status int) error {
 	if user == nil {
 		return ErrUserNotFound
 	}
-	return s.userRepo.UpdateStatus(userID, status)
+	if s.isSuperAdmin(user) {
+		return ErrSuperAdminProtected
+	}
+	if err := s.userRepo.UpdateStatus(userID, status); err != nil {
+		return err
+	}
+	if status == 0 {
+		if err := s.tokenRepo.RevokeAllForUser(userID); err != nil {
+			return err
+		}
+	}
+	s.controlHub.Publish(userID, "account_status_changed")
+	return nil
 }
 
 func (s *AdminService) AssignUserRoles(userID int64, roleIDs []int64) error {
@@ -42,6 +101,18 @@ func (s *AdminService) AssignUserRoles(userID int64, roleIDs []int64) error {
 	}
 	if user == nil {
 		return ErrUserNotFound
+	}
+	if s.isSuperAdmin(user) {
+		return ErrSuperAdminProtected
+	}
+	for _, roleID := range roleIDs {
+		role, err := s.roleRepo.FindByID(roleID)
+		if err != nil {
+			return err
+		}
+		if role != nil && role.Name == "admin" {
+			return ErrAdminRoleReserved
+		}
 	}
 	return s.userRepo.AssignRoles(userID, roleIDs)
 }
@@ -77,6 +148,9 @@ func (s *AdminService) UpdateRole(id int64, req model.UpdateRoleRequest) (*model
 	if role == nil {
 		return nil, ErrRoleNotFound
 	}
+	if role.Name == "admin" {
+		return nil, ErrAdminRoleProtected
+	}
 
 	if err := s.roleRepo.Update(id, req.Name, req.Description); err != nil {
 		return nil, err
@@ -98,7 +172,7 @@ func (s *AdminService) DeleteRole(id int64) error {
 		return ErrRoleNotFound
 	}
 	if role.Name == "admin" {
-		return errors.New("不能删除admin角色")
+		return ErrAdminRoleProtected
 	}
 	return s.roleRepo.Delete(id)
 }

@@ -19,6 +19,7 @@ import (
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrAccountDisabled    = errors.New("account disabled")
+	ErrAccountExpired     = errors.New("account expired")
 	ErrTooManyAttempts    = errors.New("too many login attempts")
 	ErrTokenRevoked       = errors.New("token revoked")
 	ErrTokenExpired       = errors.New("token expired")
@@ -30,14 +31,16 @@ type AuthService struct {
 	tokenRepo    *repository.TokenRepo
 	loginLogRepo *repository.LoginLogRepo
 	cfg          config.AuthConfig
+	accessSvc    *AccessService
 }
 
 func NewAuthService(userRepo *repository.UserRepo, tokenRepo *repository.TokenRepo,
-	loginLogRepo *repository.LoginLogRepo, cfg config.AuthConfig) *AuthService {
+	loginLogRepo *repository.LoginLogRepo, accessSvc *AccessService, cfg config.AuthConfig) *AuthService {
 	return &AuthService{
 		userRepo:     userRepo,
 		tokenRepo:    tokenRepo,
 		loginLogRepo: loginLogRepo,
+		accessSvc:    accessSvc,
 		cfg:          cfg,
 	}
 }
@@ -74,7 +77,12 @@ func (s *AuthService) Register(req model.RegisterRequest) (*model.User, error) {
 	}
 
 	// Assign default "user" role
-	s.userRepo.AssignRoles(user.ID, []int64{2})
+	if err := s.userRepo.AssignRoles(user.ID, []int64{2}); err != nil {
+		return nil, err
+	}
+	if err := s.accessSvc.CreateDefault(user.ID, s.cfg.DefaultUsageDays); err != nil {
+		return nil, err
+	}
 
 	return user, nil
 }
@@ -109,6 +117,15 @@ func (s *AuthService) Login(req model.LoginRequest, ip, userAgent string) (*mode
 		return nil, ErrInvalidCredentials
 	}
 
+	access, err := s.accessSvc.Evaluate(user)
+	if err != nil {
+		return nil, err
+	}
+	if !access.Allowed && access.Reason == "expired" {
+		s.logLogin(&user.ID, req.Username, ip, userAgent, "failed", "account expired")
+		return nil, ErrAccountExpired
+	}
+
 	s.logLogin(&user.ID, req.Username, ip, userAgent, "success", "")
 	s.userRepo.UpdateLastLogin(user.ID)
 
@@ -138,6 +155,8 @@ func (s *AuthService) Login(req model.LoginRequest, ip, userAgent string) (*mode
 			Username: user.Username,
 			Nickname: nickname,
 			Roles:    roles,
+			Status:   user.Status,
+			Access:   access,
 		},
 	}, nil
 }
@@ -172,6 +191,16 @@ func (s *AuthService) RefreshToken(refreshTokenStr string) (*model.RefreshRespon
 	if user.Status != 1 {
 		return nil, ErrAccountDisabled
 	}
+	access, err := s.accessSvc.Evaluate(user)
+	if err != nil {
+		return nil, err
+	}
+	if !access.Allowed {
+		if access.Reason == "expired" {
+			return nil, ErrAccountExpired
+		}
+		return nil, ErrAccountDisabled
+	}
 
 	roles, _ := s.userRepo.UserRoles(user.ID)
 
@@ -189,19 +218,32 @@ func (s *AuthService) RefreshToken(refreshTokenStr string) (*model.RefreshRespon
 		AccessToken:  accessToken,
 		RefreshToken: newRefreshToken,
 		ExpiresIn:    s.cfg.AccessTokenTTL,
+		Access:       access,
 	}, nil
+}
+
+func (s *AuthService) Logout(refreshTokenStr string) error {
+	if refreshTokenStr == "" {
+		return nil
+	}
+	return s.tokenRepo.Revoke(hashToken(refreshTokenStr))
 }
 
 func (s *AuthService) generateAccessToken(user *model.User, roles []string) (string, error) {
 	now := time.Now().UTC()
+	authVersion, err := s.userRepo.AuthVersion(user.ID)
+	if err != nil {
+		return "", err
+	}
 	claims := jwt.MapClaims{
-		"sub":      user.ID,
-		"username": user.Username,
-		"nickname": user.Nickname,
-		"roles":    roles,
-		"iat":      now.Unix(),
-		"exp":      now.Add(time.Duration(s.cfg.AccessTokenTTL) * time.Second).Unix(),
-		"jti":      randomID(),
+		"sub":          user.ID,
+		"username":     user.Username,
+		"nickname":     user.Nickname,
+		"roles":        roles,
+		"auth_version": authVersion,
+		"iat":          now.Unix(),
+		"exp":          now.Add(time.Duration(s.cfg.AccessTokenTTL) * time.Second).Unix(),
+		"jti":          randomID(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

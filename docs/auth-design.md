@@ -67,7 +67,7 @@ Payload 结构：
 - 用户登出 → 吊销当前 Refresh Token
 - 管理员禁用用户 → 吊销该用户所有 Refresh Token
 
-Access Token 不主动吊销（无状态设计），依赖短有效期自然过期。如需立即生效，可使用 Token 黑名单（内存 LRU 缓存）。
+Access Token 携带账号 `auth_version`。每个受保护接口都会同时校验账号状态和数据库中的当前版本；管理员禁用账号或用户修改密码时版本递增，因此此前签发的全部 Access Token 永久失效，即使账号随后重新启用也不能恢复。管理员禁用时还会吊销该账号全部 Refresh Token，重新启用后必须重新登录。
 
 ## 密码策略
 
@@ -118,7 +118,7 @@ User ──┬── Role ──┬── Permission
 // router.go
 r.Group(func(r chi.Router) {
     r.Use(middleware.Auth(jwtSecret))
-    r.Use(middleware.RequireRole("admin"))
+    r.Use(middleware.RequireSuperAdmin(superAdminUsername))
 
     r.Get("/api/v1/admin/users", adminHandler.ListUsers)
     r.Post("/api/v1/admin/announcements", announcementHandler.Create)
@@ -149,9 +149,9 @@ r.Group(func(r chi.Router) {
 
 ## 预置角色和权限
 
-### admin（管理员）
+### admin（主管理员专用角色）
 
-拥有所有权限。不可删除此角色。
+拥有所有权限。该角色不可修改、不可删除，也不能分配给普通账号。管理接口同时校验 `SUPER_ADMIN_USERNAME` 对应的用户名和 `admin` 角色，仅持有角色但用户名不匹配的账号仍返回 403。
 
 ### user（普通用户）
 
@@ -169,6 +169,7 @@ r.Group(func(r chi.Router) {
 ```yaml
 auth:
   jwt_secret: "至少32字节的随机字符串"   # 生产环境通过环境变量注入
+  super_admin_username: "admin"          # 唯一允许进入服务端管理台的账号
   access_token_ttl: 7200                  # 秒，2小时
   refresh_token_ttl: 2592000              # 秒，30天
   bcrypt_cost: 10
@@ -176,4 +177,17 @@ auth:
   login_lock_minutes: 15
 ```
 
-JWT Secret 必须通过环境变量 `JWT_SECRET` 注入，config.yaml 上的默认值仅用于本地开发。
+JWT Secret 必须通过环境变量 `JWT_SECRET` 注入，config.yaml 上的默认值仅用于本地开发。主管理员用户名可通过 `SUPER_ADMIN_USERNAME` 覆盖，默认使用内置 `admin` 账号。
+
+主管理员账号是服务端控制账号，不属于可远程禁用的客户端账号：后台禁止修改它的启停状态和角色，并在所有登录、资料及心跳响应中固定返回长期有效、三个产品板块全部开放。其他注册账号不能进入 `/admin` 或调用 `/api/v1/admin/*`。
+
+## 账号使用期与产品板块权限
+
+`user_access_control` 独立保存账号授权，不把产品板块开关混入 RBAC 角色。每次登录、Refresh Token 和心跳都会重新计算账号状态、到期时间以及三个模块开关。
+
+- 新注册账号默认只开放竞品监控，默认使用期 30 天。
+- 管理员可通过 `/api/v1/admin/users/:id/access` 远程修改使用期和模块开关。
+- 心跳返回授权租约；账号到期时客户端锁定本地业务。账号禁用时 Access Token 校验立即返回 401，客户端清除全部 Token、终止未完成任务并显示不可点击的“账户被禁用”。
+- 网络短暂不可用时客户端保留有限租约；租约耗尽后回到登录页。
+- 客户端登录后同时连接 `/api/v1/control/stream`。管理员变更账号状态、使用期或模块开关时，服务端按用户推送通知，客户端立即强制心跳确认并更新界面。
+- SSE 仅负责降低生效延迟，不能替代心跳和租约；断线时自动重连，每 1 分钟心跳继续兜底。

@@ -148,6 +148,10 @@
 
 Refresh Token 轮转：每次使用后吊销旧 Token，签发新 Token，防止重放攻击。
 
+### POST /api/v1/auth/logout
+
+提交当前 `refresh_token` 并吊销该会话。接口设计为幂等操作，客户端即使已丢失或使用过该 Token，也可以安全地重复退出。
+
 ### GET /api/v1/health
 
 服务健康检查。
@@ -326,13 +330,21 @@ Authorization: Bearer <access_token>
 }
 ```
 
-心跳间隔建议 5 分钟。服务端记录到 `heartbeat_logs`，同时在响应中告知是否有新版本。
+心跳间隔建议 1 分钟。服务端记录到 `heartbeat_logs`，同时在响应中告知是否有新版本。
+
+响应同时包含 `access` 授权租约，包括账号是否可用、到期时间、剩余秒数以及竞品监控、商家后台、分析中心三个模块开关。
+
+### GET /api/v1/control/stream
+
+JWT 鉴权的 SSE 长连接，按用户 ID 订阅控制事件。管理员更新账号状态或账号授权后发送 `access_changed` / `account_status_changed`；客户端收到事件后立即强制执行一次心跳，不直接信任事件内容。服务端每 15 秒发送注释保活，客户端断线指数退避重连，一分钟周期心跳继续作为兜底。
 
 ---
 
-## 管理员接口（需 admin 角色）
+## 管理员接口（仅限唯一主管理员）
 
 路由前缀：`/api/v1/admin`
+
+接口同时要求登录用户名等于 `SUPER_ADMIN_USERNAME`（默认 `admin`）且持有内置 `admin` 角色。普通注册账号即使被数据库误授 `admin` 角色也不能访问。主管理员账号及其角色受保护，不能通过管理接口禁用、修改授权、改角色或删除角色。
 
 ### 用户管理
 
@@ -371,6 +383,10 @@ Authorization: Bearer <access_token>
 ```
 
 替换模式（全量替换，非追加），传空数组清空所有角色。
+
+#### PUT /api/v1/admin/users/:id/access
+
+设置账号到期时间和三个产品板块开关。新注册账号默认只开放竞品监控。
 
 ### 角色管理
 

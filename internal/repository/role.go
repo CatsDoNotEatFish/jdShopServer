@@ -19,17 +19,33 @@ func (r *RoleRepo) List() ([]model.Role, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	var roles []model.Role
 	for rows.Next() {
 		var role model.Role
 		if err := rows.Scan(&role.ID, &role.Name, &role.Description, &role.CreatedAt); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		perms, _ := r.getRolePermissions(role.ID)
-		role.Permissions = perms
 		roles = append(roles, role)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	// max_open_conns is intentionally 1 for SQLite. Finish and close the role
+	// cursor before issuing permission queries, otherwise the nested query waits
+	// forever for the only database connection held by rows.
+	for i := range roles {
+		perms, err := r.getRolePermissions(roles[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		roles[i].Permissions = perms
 	}
 	return roles, nil
 }

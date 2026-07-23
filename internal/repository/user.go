@@ -18,7 +18,12 @@ func NewUserRepo(db *sql.DB) *UserRepo {
 }
 
 func (r *UserRepo) Create(user *model.User) error {
-	result, err := r.db.Exec(
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(
 		`INSERT INTO users (username, email, password_hash, nickname, avatar_url, status)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		user.Username, user.Email, user.PasswordHash, user.Nickname, user.AvatarURL, user.Status,
@@ -28,7 +33,10 @@ func (r *UserRepo) Create(user *model.User) error {
 	}
 	id, _ := result.LastInsertId()
 	user.ID = id
-	return nil
+	if _, err := tx.Exec(`INSERT INTO user_auth_versions (user_id, version) VALUES (?, 1)`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *UserRepo) FindByUsername(username string) (*model.User, error) {
@@ -96,10 +104,14 @@ func (r *UserRepo) List(page, pageSize int, keyword string, status *int) ([]mode
 	query := fmt.Sprintf(
 		`SELECT u.id, u.username, u.email, u.password_hash, u.nickname, u.avatar_url, u.status,
 		        u.last_login_at, u.created_at, u.updated_at,
-		        COALESCE(GROUP_CONCAT(r.name), '') as role_names
+		        COALESCE(GROUP_CONCAT(r.name), '') as role_names,
+		        hb.created_at, hb.device_id, hb.platform, hb.app_version
 		 FROM users u
 		 LEFT JOIN user_roles ur ON u.id = ur.user_id
 		 LEFT JOIN roles r ON ur.role_id = r.id
+		 LEFT JOIN heartbeat_logs hb ON hb.id = (
+		     SELECT id FROM heartbeat_logs WHERE user_id = u.id ORDER BY id DESC LIMIT 1
+		 )
 		 %s
 		 GROUP BY u.id
 		 ORDER BY u.id DESC
@@ -117,7 +129,8 @@ func (r *UserRepo) List(page, pageSize int, keyword string, status *int) ([]mode
 	for rows.Next() {
 		var u model.UserWithRoles
 		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.Nickname,
-			&u.AvatarURL, &u.Status, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt, &u.RoleNames); err != nil {
+			&u.AvatarURL, &u.Status, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt, &u.RoleNames,
+			&u.LastHeartbeatAt, &u.HeartbeatDevice, &u.HeartbeatPlatform, &u.HeartbeatVersion); err != nil {
 			return nil, 0, err
 		}
 		users = append(users, u)
@@ -126,9 +139,50 @@ func (r *UserRepo) List(page, pageSize int, keyword string, status *int) ([]mode
 }
 
 func (r *UserRepo) UpdateStatus(id int64, status int) error {
-	_, err := r.db.Exec(`UPDATE users SET status = ?, updated_at = ? WHERE id = ?`,
-		status, time.Now().UTC().Format(time.RFC3339), id)
-	return err
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := tx.Exec(`UPDATE users SET status = ?, updated_at = ? WHERE id = ?`, status, now, id); err != nil {
+		return err
+	}
+	if status == 0 {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO user_auth_versions (user_id, version, updated_at) VALUES (?, 1, ?)`, id, now); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE user_auth_versions SET version = version + 1, updated_at = ? WHERE user_id = ?`, now, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *UserRepo) AuthVersion(id int64) (int64, error) {
+	var version int64
+	err := r.db.QueryRow(`SELECT version FROM user_auth_versions WHERE user_id = ?`, id).Scan(&version)
+	if err == sql.ErrNoRows {
+		return 1, nil
+	}
+	return version, err
+}
+
+func (r *UserRepo) TokenState(id int64) (status int, authVersion int64, exists bool, err error) {
+	err = r.db.QueryRow(
+		`SELECT u.status, COALESCE(v.version, 1)
+		 FROM users u
+		 LEFT JOIN user_auth_versions v ON v.user_id = u.id
+		 WHERE u.id = ?`,
+		id,
+	).Scan(&status, &authVersion)
+	if err == sql.ErrNoRows {
+		return 0, 0, false, nil
+	}
+	if err != nil {
+		return 0, 0, false, err
+	}
+	return status, authVersion, true, nil
 }
 
 func (r *UserRepo) UpdateProfile(id int64, nickname, email, avatarURL *string) error {
@@ -142,9 +196,22 @@ func (r *UserRepo) UpdateProfile(id int64, nickname, email, avatarURL *string) e
 }
 
 func (r *UserRepo) UpdatePassword(id int64, hash string) error {
-	_, err := r.db.Exec(`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`,
-		hash, time.Now().UTC().Format(time.RFC3339), id)
-	return err
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := tx.Exec(`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`, hash, now, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO user_auth_versions (user_id, version, updated_at) VALUES (?, 1, ?)`, id, now); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE user_auth_versions SET version = version + 1, updated_at = ? WHERE user_id = ?`, now, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *UserRepo) UpdateLastLogin(id int64) error {

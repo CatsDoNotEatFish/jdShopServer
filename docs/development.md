@@ -168,12 +168,13 @@ r.Group(func(r chi.Router) {
 4. **实现 Service**: `internal/service/xxx.go`
 5. **实现 Handler**: `internal/handler/xxx.go`
 6. **注册路由**: `internal/router/router.go`
-7. **手动测试**: curl 测试端点
-8. **更新文档**: `docs/api-reference.md` 和 `docs/database-schema.md`（如表结构有变化）
+7. **编写行为测试**: 优先通过 `httptest` 覆盖注册、登录、心跳和管理员控制接口
+8. **手动测试**: curl 测试端点
+9. **更新文档**: `docs/api-reference.md` 和 `docs/database-schema.md`（如表结构有变化）
 
 ## 测试
 
-当前采用手动 curl 测试 + 生产验证策略。后续可加入单元测试。
+服务端使用 `go test ./...` 运行路由行为测试，并结合 curl 做生产环境验证。
 
 ```bash
 # 快速验证
