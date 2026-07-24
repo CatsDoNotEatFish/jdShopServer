@@ -1,6 +1,8 @@
 # API 接口参考
 
-基础路径: `/api/v1`
+生产基础路径: `https://api.jdshop.bbroot.com/api/v1`
+
+API域名只开放 `/api/*`，访问根路径或 `/admin` 返回404。接口文档仅保存在仓库中，不再作为可交互测试页面部署到公网。主管理员控制台位于 `https://www.jdshop.bbroot.com/admin`，页面通过CORS调用API域名。
 
 ## 通用说明
 
@@ -38,10 +40,12 @@
 | 0 | 200 | 成功 |
 | 10001 | 400 | 参数校验失败 |
 | 10002 | 401 | 未认证（Token 缺失、过期、无效） |
-| 10003 | 403 | 无权限 / 账号禁用 / 频率限制 |
+| 10003 | 403 | 无权限 / 账号禁用 |
 | 10004 | 404 | 资源不存在 |
-| 10005 | 409 | 资源冲突（如用户名已存在） |
+| 10005 | 409 | 资源冲突（如手机号已注册） |
+| 10006 | 429 | 短信发送频率或每日次数超限 |
 | 10500 | 500 | 服务内部错误 |
+| 10503 | 503 | 短信服务未配置或供应商暂不可用 |
 
 ### 鉴权方式
 
@@ -52,6 +56,8 @@ Authorization: Bearer <access_token>
 ```
 
 Access Token 有效期 2 小时，过期后使用 Refresh Token 换取新 Token。
+
+生产环境只允许通过 `https://api.jdshop.bbroot.com` 传输密码、短信验证码和 Token。客户端会拒绝连接非 localhost 的 HTTP 鉴权地址；Nginx 同时启用 TLS 与 HSTS。浏览器开发者工具能显示本机发送前的 JSON，不代表公网链路是明文，真正的网络数据由 TLS 加密。`http://127.0.0.1` 只用于同机开发测试。
 
 ---
 
@@ -83,18 +89,50 @@ curl http://127.0.0.1:8080/api/v1/health
 
 ---
 
-## 2. 注册
+## 2. 手机号注册与验证码
+
+### GET /api/v1/auth/captcha
+
+获取一次性图形验证码。返回的 `image` 是可直接赋给 `<img src>` 的PNG Data URL。验证码由5位大写英文字母和数字混合组成，排除 `0/O/1/I/L` 等易混字符，并在服务端完成字符旋转、错位、波形扭曲、干扰曲线和噪点栅格化。响应图片不包含SVG文本或可直接提取的验证码元数据。验证码5分钟过期，校验一次后立即作废，无论成功失败都必须刷新。
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "captcha_id": "随机ID",
+    "image": "data:image/png;base64,...",
+    "expires_at": "2026-07-23T13:05:00Z"
+  }
+}
+```
+
+### POST /api/v1/auth/sms/send
+
+图形验证码通过后发送短信验证码。`purpose` 支持 `register` 和 `password_reset`。
+
+```json
+{
+  "phone": "13800138000",
+  "purpose": "register",
+  "captcha_id": "上一步返回的ID",
+  "captcha_code": "1234"
+}
+```
+
+服务端强制执行：同一手机号60秒内最多1条（跨用途统一计算）、中国标准时间自然日最多6条、同一IP每小时最多20条；连续短信不会复用相同验证码。验证码使用 HMAC-SHA256 保存，5分钟有效、最多尝试5次。短信平台只调用 HTTPS 安全接口。
 
 ### POST /api/v1/auth/register
 
-无需鉴权。
+无需鉴权，但必须先完成图形验证码和注册短信验证。
 
 **请求体:**
 
 ```json
 {
-  "username": "testuser",
+  "phone": "13800138000",
   "password": "test123",
+  "sms_code": "654321",
   "email": "test@example.com",
   "nickname": "Test User"
 }
@@ -102,17 +140,18 @@ curl http://127.0.0.1:8080/api/v1/health
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
-| username | 是 | 3-32 字符，字母数字下划线 |
+| phone | 是 | 中国大陆11位手机号 |
 | password | 是 | 6-64 字符 |
+| sms_code | 是 | 6位注册短信验证码 |
 | email | 否 | 邮箱 |
 | nickname | 否 | 显示昵称 |
 
 **curl 示例:**
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/v1/auth/register \
+curl -X POST https://api.jdshop.bbroot.com/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"username":"testuser","password":"test123","nickname":"Test User"}'
+  -d '{"phone":"13800138000","password":"test123","sms_code":"654321","nickname":"Test User"}'
 ```
 
 **成功返回 (200):**
@@ -123,7 +162,8 @@ curl -X POST http://127.0.0.1:8080/api/v1/auth/register \
   "message": "success",
   "data": {
     "id": 2,
-    "username": "testuser",
+    "username": "13800138000",
+    "phone": "13800138000",
     "nickname": "Test User"
   }
 }
@@ -132,11 +172,11 @@ curl -X POST http://127.0.0.1:8080/api/v1/auth/register \
 **失败返回:**
 
 ```json
-// 用户名已被占用 (409)
-{"code": 10005, "message": "用户名已被占用", "data": null}
+// 手机号已注册 (409)
+{"code": 10005, "message": "该手机号已注册", "data": null}
 
 // 参数校验失败 (400)
-{"code": 10001, "message": "用户名长度须为3-32字符", "data": null}
+{"code": 10001, "message": "短信验证码错误", "data": null}
 {"code": 10001, "message": "密码长度须为6-64字符", "data": null}
 ```
 
@@ -152,7 +192,7 @@ curl -X POST http://127.0.0.1:8080/api/v1/auth/register \
 
 ```json
 {
-  "username": "testuser",
+  "phone": "13800138000",
   "password": "test123"
 }
 ```
@@ -160,9 +200,9 @@ curl -X POST http://127.0.0.1:8080/api/v1/auth/register \
 **curl 示例:**
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/v1/auth/login \
+curl -X POST https://api.jdshop.bbroot.com/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"testuser","password":"test123"}'
+  -d '{"phone":"13800138000","password":"test123"}'
 ```
 
 **成功返回 (200):**
@@ -177,7 +217,8 @@ curl -X POST http://127.0.0.1:8080/api/v1/auth/login \
     "expires_in": 7200,
     "user": {
       "id": 2,
-      "username": "testuser",
+      "username": "13800138000",
+      "phone": "13800138000",
       "nickname": "Test User",
       "roles": ["user"]
     }
@@ -195,8 +236,8 @@ curl -X POST http://127.0.0.1:8080/api/v1/auth/login \
 **失败返回:**
 
 ```json
-// 用户名或密码错误 (400)
-{"code": 10001, "message": "用户名或密码错误", "data": null}
+// 手机号或密码错误 (400)
+{"code": 10001, "message": "手机号或密码错误", "data": null}
 
 // 账号被禁用 (403)
 {"code": 10003, "message": "账号已被禁用", "data": null}
@@ -206,7 +247,7 @@ curl -X POST http://127.0.0.1:8080/api/v1/auth/login \
 ```
 
 **登录保护规则:**
-- 同 IP 或同用户名 5 分钟内连续失败 5 次 → 锁定 15 分钟
+- 同 IP 或同手机号 5 分钟内连续失败 5 次 → 锁定 15 分钟
 - 所有登录尝试记录到 `login_logs` 表
 
 ---
@@ -339,24 +380,24 @@ curl -X PUT http://127.0.0.1:8080/api/v1/user/profile \
 
 ### PUT /api/v1/user/password
 
-需要鉴权。修改密码（修改后所有 Refresh Token 吊销，需重新登录）。
+需要鉴权。已绑定手机号的账号必须先以 `purpose=password_reset` 完成图形验证码和短信发送，再提交短信验证码。修改后所有 Refresh Token 吊销、`auth_version` 递增，需重新登录。迁移前尚未绑定手机号的旧账号临时保留旧密码校验方式。
 
 **请求体:**
 
 ```json
 {
-  "old_password": "test123",
-  "new_password": "newPassword456"
+  "new_password": "newPassword456",
+  "sms_code": "654321"
 }
 ```
 
 **curl 示例:**
 
 ```bash
-curl -X PUT http://127.0.0.1:8080/api/v1/user/password \
+curl -X PUT https://api.jdshop.bbroot.com/api/v1/user/password \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"old_password":"test123","new_password":"newPassword456"}'
+  -d '{"new_password":"newPassword456","sms_code":"654321"}'
 ```
 
 **成功返回 (200):**
@@ -368,7 +409,7 @@ curl -X PUT http://127.0.0.1:8080/api/v1/user/password \
 **失败返回 (400):**
 
 ```json
-{"code": 10001, "message": "旧密码错误", "data": null}
+{"code": 10001, "message": "短信验证码错误", "data": null}
 ```
 
 ---
@@ -414,11 +455,11 @@ curl -X POST http://127.0.0.1:8080/api/v1/heartbeat \
   "message": "success",
   "data": {
     "has_new_version": true,
-    "latest_version_code": 2026072302,
-    "latest_version_name": "0.2.3",
-    "latest_download_url": "https://jdshop-client-releases-hk.oss-cn-hongkong.aliyuncs.com/JDMonitor-0.2.3-win-x64.zip",
-    "latest_file_hash": "sha256:a357ced14dbba3257a4cfddbe6334552e0ff20fe6aac0803bc309bea77d2b942",
-    "latest_file_size": 134772190,
+    "latest_version_code": 2026072401,
+    "latest_version_name": "0.2.4",
+    "latest_download_url": "https://jdshop-client-releases-hk.oss-cn-hongkong.aliyuncs.com/JDMonitor-0.2.4-win-x64.zip",
+    "latest_file_hash": "sha256:bfdf42bde2095c5a1abb209117e65eefe883d902850d269843ccc4a85616e056",
+    "latest_file_size": 134822980,
     "is_force_update": false,
     "access": {
       "allowed": true,
@@ -624,7 +665,7 @@ curl "http://127.0.0.1:8080/api/v1/admin/users?keyword=admin&status=1" \
         "last_heartbeat_at": "2026-07-22T09:30:00Z",
         "heartbeat_device_id": "2dbf6c95-...",
         "heartbeat_platform": "windows",
-        "heartbeat_app_version": "0.2.3",
+        "heartbeat_app_version": "0.2.4",
         "created_at": "2026-07-04 09:06:16",
         "updated_at": "2026-07-04 09:06:16",
         "RoleNames": "admin"
@@ -700,7 +741,58 @@ curl -X POST http://127.0.0.1:8080/api/v1/admin/users/2/roles \
 }
 ```
 
-### 9.2 角色管理
+### 9.2 新用户注册默认策略
+
+这里配置的是注册模板：新账号注册成功时复制一次，已有账号不会随模板变化。初始值为赠送 30 天、仅开放竞品监控。
+
+#### GET /api/v1/admin/registration-defaults
+
+读取当前注册默认策略。
+
+```bash
+curl http://127.0.0.1:8080/api/v1/admin/registration-defaults \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**成功返回 (200):**
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "usage_days": 30,
+    "competitor_monitor": true,
+    "merchant_backend": false,
+    "analysis_center": false,
+    "updated_at": "2026-07-23T12:00:00Z"
+  }
+}
+```
+
+#### PUT /api/v1/admin/registration-defaults
+
+保存新用户默认赠送天数和三个产品板块。`usage_days` 必须是 1-3650 的整数，三个板块可以任意组合，也允许全部关闭。
+
+```bash
+curl -X PUT http://127.0.0.1:8080/api/v1/admin/registration-defaults \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "usage_days": 7,
+    "competitor_monitor": true,
+    "merchant_backend": false,
+    "analysis_center": false
+  }'
+```
+
+成功响应的 `data` 与 GET 相同，并带有本次保存的 `updated_at`。天数不在允许范围时返回：
+
+```json
+{"code":10001,"message":"默认赠送天数须为1-3650天","data":null}
+```
+
+### 9.3 角色管理
 
 #### GET /api/v1/admin/roles
 
@@ -780,7 +872,7 @@ curl http://127.0.0.1:8080/api/v1/admin/permissions \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### 9.3 公告管理
+### 9.4 公告管理
 
 #### GET /api/v1/admin/announcements
 
@@ -895,7 +987,7 @@ curl -X POST http://127.0.0.1:8080/api/v1/admin/announcements/2/unpublish \
 
 返回: `{"code": 0, "message": "已下架", "data": null}`
 
-### 9.4 版本管理
+### 9.5 版本管理
 
 #### GET /api/v1/admin/versions
 
@@ -998,6 +1090,8 @@ curl -X DELETE http://127.0.0.1:8080/api/v1/admin/versions/1 \
 | GET | `/api/v1/health` | 无 | 健康检查 |
 | POST | `/api/v1/auth/register` | 无 | 注册 |
 | POST | `/api/v1/auth/login` | 无 | 登录 |
+| GET | `/api/v1/auth/captcha` | 无 | 获取一次性图形验证码 |
+| POST | `/api/v1/auth/sms/send` | 无 | 图形验证后发送短信验证码 |
 | POST | `/api/v1/auth/refresh` | 无 | 刷新 Token |
 | POST | `/api/v1/auth/logout` | 无 | 吊销当前 Refresh Token |
 | GET | `/api/v1/user/profile` | JWT | 获取个人信息 |
@@ -1011,6 +1105,8 @@ curl -X DELETE http://127.0.0.1:8080/api/v1/admin/versions/1 \
 | PUT | `/api/v1/admin/users/:id/status` | admin | 启用/禁用用户 |
 | POST | `/api/v1/admin/users/:id/roles` | admin | 分配角色 |
 | PUT | `/api/v1/admin/users/:id/access` | admin | 设置账号使用期和产品板块 |
+| GET | `/api/v1/admin/registration-defaults` | admin | 读取新用户注册默认策略 |
+| PUT | `/api/v1/admin/registration-defaults` | admin | 设置默认赠送天数和产品板块 |
 | GET | `/api/v1/admin/roles` | admin | 角色列表 |
 | POST | `/api/v1/admin/roles` | admin | 创建角色 |
 | PUT | `/api/v1/admin/roles/:id` | admin | 更新角色 |
@@ -1026,3 +1122,10 @@ curl -X DELETE http://127.0.0.1:8080/api/v1/admin/versions/1 \
 | POST | `/api/v1/admin/versions` | admin | 发布版本 |
 | PUT | `/api/v1/admin/versions/:id` | admin | 编辑版本 |
 | DELETE | `/api/v1/admin/versions/:id` | admin | 删除版本 |
+## 鉴权加密公钥
+
+```http
+GET /api/v1/auth/encryption-key
+```
+
+返回当前RSA公钥、算法标识和 `kid`。登录、注册、短信发送、令牌刷新/注销和修改密码使用 `Content-Type: application/jdshop-encrypted+json` 提交混合加密信封；`path` 必须绑定对应的远程 `/api/v1/...` 路径，时间戳与服务器时间差不得超过2分钟，`request_id` 只能使用一次。

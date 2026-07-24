@@ -34,6 +34,7 @@ chown -R root:root "$APP_DIR/migrations/"
 
 echo "=== 复制管理控制台 ==="
 mkdir -p "$APP_DIR/static"
+rm -f "$APP_DIR/static/index.html"
 cp static/*.html "$APP_DIR/static/"
 chown -R root:root "$APP_DIR/static/"
 

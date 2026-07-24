@@ -1,21 +1,20 @@
 # 部署指南
 
-本文是 jdShopServer 的标准生产部署说明。当前推荐环境是 Ubuntu 22.04 LTS x86_64、Nginx、systemd、SQLite和HTTPS。当前实际生产域名为 `api.jdshop.bbroot.com`；完整逐步操作和排障记录见 [生产服务器部署与运维手册](operations/production-deployment-runbook.md)。
+本文是 jdShopServer 的标准生产部署说明。当前推荐环境是 Ubuntu 22.04 LTS x86_64、Nginx、systemd、SQLite和HTTPS。生产环境严格拆分为API域名 `api.jdshop.bbroot.com` 和管理台域名 `www.jdshop.bbroot.com`；完整逐步操作和排障记录见 [生产服务器部署与运维手册](operations/production-deployment-runbook.md)。
 
 ## 1. 部署架构
 
 ```text
-Windows 客户端
-    │ HTTPS 443
-    ▼
-Nginx
-    ├─ /api/v1/control/stream  → SSE专用反向代理
-    ├─ /api/*                  → 127.0.0.1:8080
-    └─ /admin                  → Go服务内置管理控制台
-                                 │
-                                 ├─ /opt/jdshop/data/app.db
-                                 ├─ /opt/jdshop/logs/
-                                 └─ /opt/jdshop/backups/
+Windows客户端 ──HTTPS──> api.jdshop.bbroot.com/api/* ──> Go 127.0.0.1:8080
+主管理员浏览器 ──HTTPS──> www.jdshop.bbroot.com/admin ──> Nginx静态admin.html
+                                                   │
+                                                   └─跨域请求API专用域名
+
+Go服务
+├─ /api/v1/control/stream  SSE实时控制
+├─ /api/*                  业务接口
+├─ /                       404，不再提供测试API页面
+└─ /admin                  404，管理台由www域名的Nginx静态提供
 ```
 
 Go服务只监听 `127.0.0.1:8080`，公网只开放Nginx的80/443。不要在云安全组或主机防火墙中开放8080。
@@ -45,7 +44,7 @@ apt install -y certbot python3-certbot-nginx
 
 ## 3. DNS、安全组和端口
 
-部署前把API域名的A记录指向服务器公网IP，并确认：
+部署前把API域名和管理台域名的A记录都指向服务器公网IP，并确认：
 
 | 端口 | 来源 | 用途 |
 |------|------|------|
@@ -58,6 +57,7 @@ apt install -y certbot python3-certbot-nginx
 
 ```bash
 getent hosts api.jdshop.bbroot.com
+getent hosts www.jdshop.bbroot.com
 ```
 
 ## 4. 目录和运行账号
@@ -92,7 +92,7 @@ install -d -o jdshop -g jdshop -m 0750 \
 └─ backups/
 ```
 
-二进制、配置、迁移和静态文件由root拥有；只有data、logs和backups允许 `jdshop` 写入。
+二进制、配置、迁移和静态文件由root拥有；只有data、logs和backups允许 `jdshop` 写入。systemd 服务设置 `UMask=0077`，新建的数据库、日志和备份默认仅运行账号可读写，避免手机号、Token摘要等数据被其他系统账号读取。
 
 ## 5. 构建和上传
 
@@ -137,6 +137,7 @@ auth:
   refresh_token_ttl: 2592000
   login_max_attempts: 5
   login_lock_minutes: 15
+  require_encrypted_requests: true
 
 log:
   level: "info"
@@ -144,8 +145,9 @@ log:
 
 cors:
   allowed_origins:
-    - "http://localhost:8787"
-    - "http://127.0.0.1:8787"
+    - "http://localhost:8788"
+    - "http://127.0.0.1:8788"
+    - "https://www.jdshop.bbroot.com"
 ```
 
 敏感值统一放在 `/etc/jdshop/jdshop.env`，不要写入Git、部署ZIP、systemd unit或操作日志：
@@ -160,6 +162,13 @@ openssl rand -base64 48
 ```text
 JWT_SECRET=替换为至少32字节的随机密钥
 SUPER_ADMIN_USERNAME=admin
+CORS_ALLOWED_ORIGINS=https://www.jdshop.bbroot.com,http://localhost:8788,http://127.0.0.1:8788
+SMSBAO_ENABLED=true
+SMSBAO_USERNAME=短信宝后台用户名
+SMSBAO_API_KEY=短信宝后台新建的APIKey
+SMSBAO_GOODSID=已报备专用通道产品ID（没有则留空）
+SMSBAO_CONTENT_TEMPLATE="【已报备短信签名】您的验证码是%s，5分钟内有效。"
+AUTH_REQUIRE_ENCRYPTED_REQUESTS=true
 ```
 
 然后设置权限：
@@ -169,7 +178,9 @@ chown root:root /etc/jdshop/jdshop.env
 chmod 0600 /etc/jdshop/jdshop.env
 ```
 
-`SUPER_ADMIN_USERNAME` 是唯一可以进入 `/admin` 和 `/api/v1/admin/*` 的账号。首次部署必须立即修改内置 `admin/admin123` 默认密码。不要把 `admin` 角色当作后台登录授权；服务端会额外核对唯一主管理员用户名，并拒绝普通账号获得内置管理员角色。
+`SUPER_ADMIN_USERNAME` 是唯一可以登录 `https://www.jdshop.bbroot.com/admin` 并调用 `/api/v1/admin/*` 的账号。`CORS_ALLOWED_ORIGINS` 必须包含管理台HTTPS来源，否则浏览器会拦截管理台对API域名的跨域请求。首次部署必须立即修改内置 `admin/admin123` 默认密码。不要把 `admin` 角色当作后台登录授权；服务端会额外核对唯一主管理员用户名，并拒绝普通账号获得内置管理员角色。
+
+短信配置必须使用短信宝后台已经审核报备的签名、模板和专用通道产品ID，不能直接照抄文档示例发送。API Key只放在0600权限的环境文件中，不写入 `config.yaml`、Git、发布ZIP、日志或截图；密钥一旦出现在聊天或工单中，应在短信宝后台立即轮换。未完成模板报备时保持 `SMSBAO_ENABLED=false`，服务端会返回503而不会尝试发送。短信服务端强制使用 `https://api.smsbao.com/sms`，HTTP端点会被拒绝。
 
 ## 7. systemd服务
 
@@ -223,7 +234,7 @@ sudo -u jdshop /opt/jdshop/bin/jdshop-server migrate
 
 ## 8. Nginx和SSE
 
-首次签发证书前安装仓库的 `deploy/nginx.conf` HTTP引导模板，把 `api.yourdomain.com` 替换为真实域名。证书安装完成后改用 `deploy/nginx-https.conf` 生产模板。两份模板都必须保留SSE精确匹配并放在通用 `/api/` 规则之前：
+首次签发证书前安装仓库的 `deploy/nginx.conf` HTTP引导模板，把 `api.yourdomain.com` 和 `www.yourdomain.com` 分别替换为真实域名。引导模板只开放ACME验证目录，其他路径统一404。证书安装完成后改用 `deploy/nginx-https.conf` 生产模板：API域名仅代理 `/api/*`，管理台域名仅静态提供 `/admin`。SSE精确匹配必须放在通用 `/api/` 规则之前：
 
 ```nginx
 location = /api/v1/control/stream {
@@ -247,24 +258,30 @@ location = /api/v1/control/stream {
 ```bash
 install -o root -g root -m 0644 /opt/jdshop/deploy/nginx.conf /etc/nginx/sites-available/jdshop
 sed -i 's/api\.yourdomain\.com/api.jdshop.bbroot.com/g' /etc/nginx/sites-available/jdshop
+sed -i 's/www\.yourdomain\.com/www.jdshop.bbroot.com/g' /etc/nginx/sites-available/jdshop
 ln -sfn /etc/nginx/sites-available/jdshop /etc/nginx/sites-enabled/jdshop
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl reload nginx
 ```
 
-健康接口只支持GET。`curl -I`发送HEAD时返回405不代表服务异常，应使用：
+引导模板除ACME验证外应返回404，确认测试页面和明文管理入口没有暴露：
 
 ```bash
-curl -i http://api.jdshop.bbroot.com/api/v1/health
+curl -i http://api.jdshop.bbroot.com/
 ```
+
+生产模板启用后，健康接口只支持GET；`curl -I`发送HEAD可能返回405，应使用 `curl -fsS https://api.jdshop.bbroot.com/api/v1/health`。
 
 ## 9. HTTPS证书
 
 ### 9.1 方案A：Let's Encrypt / Certbot
 
 ```bash
-certbot --nginx -d api.jdshop.bbroot.com --redirect
+certbot --nginx \
+  -d api.jdshop.bbroot.com \
+  -d www.jdshop.bbroot.com \
+  --redirect
 certbot renew --dry-run
 ```
 
@@ -280,6 +297,7 @@ curl https://get.acme.sh | sh -s email=你的邮箱
 
 /root/.acme.sh/acme.sh --issue \
   -d api.jdshop.bbroot.com \
+  -d www.jdshop.bbroot.com \
   --webroot /var/www/html
 
 install -d -o root -g root -m 0700 /etc/nginx/ssl/jdshop
@@ -296,13 +314,14 @@ ssl_certificate /etc/nginx/ssl/jdshop/fullchain.pem;
 ssl_certificate_key /etc/nginx/ssl/jdshop/privkey.pem;
 ```
 
-仓库 `deploy/nginx-https.conf` 已包含80端口ACME验证目录、其他HTTP请求跳转HTTPS、443证书路径、API限流、管理台反代和SSE长连接规则。安装并替换域名：
+仓库 `deploy/nginx-https.conf` 已包含80端口ACME验证目录、HTTP转HTTPS、API域名白名单、管理台静态文件、API限流和SSE长连接规则。安装并替换两个域名：
 
 ```bash
 install -o root -g root -m 0644 \
   /opt/jdshop/deploy/nginx-https.conf \
   /etc/nginx/sites-available/jdshop
 sed -i 's/api\.yourdomain\.com/api.jdshop.bbroot.com/g' /etc/nginx/sites-available/jdshop
+sed -i 's/www\.yourdomain\.com/www.jdshop.bbroot.com/g' /etc/nginx/sites-available/jdshop
 nginx -t
 systemctl reload nginx
 ```
@@ -377,7 +396,10 @@ journalctl -u jdshop -n 100 --no-pager
 
 curl -fsS http://127.0.0.1:8080/api/v1/health
 curl -fsS https://api.jdshop.bbroot.com/api/v1/health
-curl -I https://api.jdshop.bbroot.com/admin
+curl -o /dev/null -sS -w '%{http_code}\n' https://api.jdshop.bbroot.com/
+curl -o /dev/null -sS -w '%{http_code}\n' https://api.jdshop.bbroot.com/admin
+curl -I https://www.jdshop.bbroot.com/
+curl -I https://www.jdshop.bbroot.com/admin
 
 nginx -t
 ss -lntp | grep -E ':(80|443|8080)'
@@ -393,6 +415,8 @@ curl -N --http1.1 \
 ```
 
 应立即收到 `connected`，之后约每15秒看到注释保活。客户端正常情况下每1分钟心跳一次。
+
+预期公网边界：API健康检查200；API域名的 `/` 和 `/admin` 都是404；管理台域名的 `/` 跳转到 `/admin`；管理台 `/admin` 返回200；管理台域名的 `/api/*` 返回404。
 
 ## 13. Shell执行安全
 

@@ -16,7 +16,15 @@ auth:
   refresh_token_ttl: 2592000
   login_max_attempts: 5
   login_lock_minutes: 15
-  default_usage_days: 30
+  require_encrypted_requests: true
+
+sms:
+  enabled: true
+  endpoint: "https://api.smsbao.com/sms"
+  username: "ranbaobao"
+  api_key: ""
+  goods_id: ""
+  content_template: "【染宝科技】您的验证码为%s，在5分钟内有效"
 
 log:
   level: "info"
@@ -24,5 +32,6 @@ log:
 
 cors:
   allowed_origins:
-    - "http://localhost:8787"
-    - "http://127.0.0.1:8787"
+    - "http://localhost:8788"
+    - "http://127.0.0.1:8788"
+    - "https://www.jdshop.bbroot.com"

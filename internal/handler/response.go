@@ -55,6 +55,10 @@ func codeToHTTPStatus(code int) int {
 		return http.StatusNotFound
 	case 10005:
 		return http.StatusConflict
+	case 10006:
+		return http.StatusTooManyRequests
+	case 10503:
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}

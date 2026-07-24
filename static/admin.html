@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="jdshop-api-origin" content="https://api.jdshop.bbroot.com">
 <title>jdShopServer Admin</title>
 <style>
 :root {--bg:#020617;--surf:#0f172a;--surf2:#1e293b;--accent:#22c55e;--danger:#ef4444;--warn:#f59e0b;--info:#3b82f6;--txt:#f8fafc;--txt2:#94a3b8;--border:#334155;--muted:#1a1e2f;--glow:rgba(34,197,94,0.35)}
@@ -141,6 +142,7 @@ tr:last-child td{border-bottom:none}
     <nav class="sidebar-nav">
       <button class="nav-item active" data-page="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>仪表盘</span></button>
       <button class="nav-item" data-page="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>用户管理</span></button>
+      <button class="nav-item" data-page="registration-defaults"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-2.83 2.83-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21h-4v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06-2.83-2.83.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3v-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06 2.83-2.83.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3h4v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06 2.83 2.83-.06.06A1.65 1.65 0 0 0 19.4 9c.12.6.65 1 1.26 1H21v4h-.34c-.61 0-1.14.4-1.26 1z"/></svg><span>注册默认</span></button>
       <button class="nav-item" data-page="announcements"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span>公告管理</span></button>
       <button class="nav-item" data-page="versions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="11" x2="12" y2="11"/><line x1="4" y1="15" x2="12" y2="15"/><line x1="4" y1="19" x2="12" y2="19"/><path d="M21 8v14H3V3h10"/></svg><span>版本管理</span></button>
       <button class="nav-item" data-page="roles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>角色权限</span></button>
@@ -180,17 +182,38 @@ tr:last-child td{border-bottom:none}
       <div class="page-title"><span class="dot"></span>用户管理</div>
       <div class="table-wrap">
         <div class="table-toolbar">
-          <input id="user-search" placeholder="搜索用户名 / 昵称 / 邮箱..." oninput="loadUsers()">
+          <input id="user-search" placeholder="搜索手机号 / 账号 / 昵称 / 邮箱..." oninput="loadUsers()">
           <select id="user-status" onchange="loadUsers()">
             <option value="">全部状态</option><option value="1">正常</option><option value="0">禁用</option>
           </select>
           <span style="font-size:12px;color:var(--txt2);margin-left:auto" id="user-count"></span>
         </div>
         <div style="overflow-x:auto"><table>
-           <thead><tr><th>ID</th><th>用户名</th><th>昵称</th><th>角色</th><th>状态</th><th>功能权限</th><th>使用时间</th><th>最后登录</th><th style="width:260px">操作</th></tr></thead>
+           <thead><tr><th>ID</th><th>手机号 / 账号</th><th>昵称</th><th>角色</th><th>状态</th><th>功能权限</th><th>使用时间</th><th>最后登录</th><th style="width:260px">操作</th></tr></thead>
           <tbody id="user-tbody"></tbody>
         </table></div>
         <div class="pagination" id="user-pager"></div>
+      </div>
+    </div>
+
+    <!-- ========== REGISTRATION DEFAULTS ========== -->
+    <div class="page" id="page-registration-defaults">
+      <div class="page-title"><span class="dot"></span>新用户注册默认策略</div>
+      <div class="card" style="max-width:680px">
+        <div style="font-size:13px;color:var(--txt2);margin-bottom:20px">新账号完成注册时会复制这里的赠送时间和功能权限。保存后仅影响之后注册的账号，不会修改已有账号。</div>
+        <label style="display:block;font-size:12px;color:var(--txt2);margin-bottom:6px">默认赠送时间（天）</label>
+        <input id="rd-usage-days" type="number" min="1" max="3650" step="1" style="width:220px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:9px 12px;color:var(--txt);font-size:13px;font-family:inherit">
+        <div style="font-size:11px;color:var(--txt2);margin-top:6px">允许设置 1 到 3650 天，到期时间从用户注册成功时开始计算。</div>
+        <div style="font-size:12px;color:var(--txt2);margin-top:20px;margin-bottom:8px">默认展示板块</div>
+        <div class="check-group" style="margin-bottom:20px">
+          <label class="check-chip"><input type="checkbox" id="rd-competitor"> 竞品监控</label>
+          <label class="check-chip"><input type="checkbox" id="rd-merchant"> 商家后台</label>
+          <label class="check-chip"><input type="checkbox" id="rd-analysis"> 分析中心</label>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="btn btn-primary" id="rd-save-btn" onclick="saveRegistrationDefaults()">保存默认策略</button>
+          <span id="rd-updated-at" style="font-size:11px;color:var(--txt2)"></span>
+        </div>
       </div>
     </div>
 
@@ -362,9 +385,44 @@ tr:last-child td{border-bottom:none}
 
 <script>
 // ===== GLOBALS =====
-var B=window.location.origin,TOKEN='',CURRENT_USER=null;
+var configuredApiOrigin=(document.querySelector('meta[name="jdshop-api-origin"]')||{}).content||'';
+var isLocalAdmin=window.location.hostname==='127.0.0.1'||window.location.hostname==='localhost';
+var B=(isLocalAdmin?'http://127.0.0.1:8080':configuredApiOrigin).replace(/\/$/,''),TOKEN='',CURRENT_USER=null;
 var userPage=1,annPage=1,verPage=1;
 var allRoles=[],allPerms=[];
+var encryptionKeyPromise=null;
+
+function bytesToBase64(bytes){
+  var binary='';
+  for(var i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));
+  return btoa(binary)
+}
+function base64ToBytes(value){
+  var binary=atob(String(value||''));
+  return Uint8Array.from(binary,function(ch){return ch.charCodeAt(0)})
+}
+async function getEncryptionKey(){
+  if(!encryptionKeyPromise){
+    encryptionKeyPromise=fetch(B+'/api/v1/auth/encryption-key',{cache:'no-store'}).then(async function(r){
+      var d={};try{d=await r.json()}catch(ignore){}
+      if(!r.ok||d.code!==0)throw new Error(d.message||'无法获取登录加密公钥');
+      return d.data||d
+    }).catch(function(e){encryptionKeyPromise=null;throw e})
+  }
+  return encryptionKeyPromise
+}
+async function encryptAuthRequest(path,body){
+  var keyInfo=await getEncryptionKey();
+  var requestId=crypto.randomUUID(),timestamp=Date.now(),encoder=new TextEncoder();
+  var aesKey=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt']);
+  var publicKey=await crypto.subtle.importKey('spki',base64ToBytes(keyInfo.public_key),{name:'RSA-OAEP',hash:'SHA-256'},false,['encrypt']);
+  var rawKey=await crypto.subtle.exportKey('raw',aesKey);
+  var wrappedKey=await crypto.subtle.encrypt({name:'RSA-OAEP',label:encoder.encode(requestId)},publicKey,rawKey);
+  var nonce=crypto.getRandomValues(new Uint8Array(12));
+  var aad=encoder.encode(path+'|'+timestamp+'|'+requestId);
+  var ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce,additionalData:aad,tagLength:128},aesKey,encoder.encode(JSON.stringify(body||{})));
+  return {v:Number(keyInfo.v||1),alg:keyInfo.alg||'RSA-OAEP-256+A256GCM',kid:keyInfo.kid||'',key:bytesToBase64(new Uint8Array(wrappedKey)),nonce:bytesToBase64(nonce),ciphertext:bytesToBase64(new Uint8Array(ciphertext)),ts:timestamp,request_id:requestId,path:path}
+}
 
 // ===== INIT =====
 TOKEN=sessionStorage.getItem('admin_tok')||'';
@@ -389,7 +447,8 @@ function loginSuccess(user){
 async function doLogin(){
   var u=document.getElementById('login-user').value,p=document.getElementById('login-pass').value;
   var err=document.getElementById('login-err');err.style.display='none';
-  try{var r=await fetch(B+'/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+  try{var payload=await encryptAuthRequest('/api/v1/auth/login',{username:u,password:p});
+  var r=await fetch(B+'/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/jdshop-encrypted+json'},body:JSON.stringify(payload)});
   var d=await r.json();
   if(d.code===0&&d.data.access_token){
     TOKEN=d.data.access_token;
@@ -409,6 +468,7 @@ function navigate(page){
   switch(page){
     case 'dashboard':loadDashboard();break;
     case 'users':userPage=1;loadUsers();break;
+    case 'registration-defaults':loadRegistrationDefaults();break;
     case 'announcements':annPage=1;loadAnnouncements();break;
     case 'versions':verPage=1;loadVersions();break;
     case 'roles':loadRoles();break;
@@ -428,6 +488,39 @@ async function api(path,opts){
 }
 function getQP(page,ps){ps=ps||20;return'?page='+page+'&page_size='+ps}
 
+// ===== REGISTRATION DEFAULTS =====
+async function loadRegistrationDefaults(){
+  var btn=document.getElementById('rd-save-btn');btn.disabled=true;
+  try{
+    var r=await api('/api/v1/admin/registration-defaults'),d=await r.json();
+    if(!r.ok||d.code!==0)throw new Error(d.message||'读取失败');
+    var v=d.data||{};
+    document.getElementById('rd-usage-days').value=v.usage_days||30;
+    document.getElementById('rd-competitor').checked=!!v.competitor_monitor;
+    document.getElementById('rd-merchant').checked=!!v.merchant_backend;
+    document.getElementById('rd-analysis').checked=!!v.analysis_center;
+    document.getElementById('rd-updated-at').textContent=v.updated_at?'上次保存：'+formatDate(v.updated_at):'';
+  }catch(e){toast(e.message||'读取注册默认策略失败',false)}
+  finally{btn.disabled=false}
+}
+async function saveRegistrationDefaults(){
+  var days=Number(document.getElementById('rd-usage-days').value),btn=document.getElementById('rd-save-btn');
+  if(!Number.isInteger(days)||days<1||days>3650){toast('默认赠送天数须为 1-3650 的整数',false);return}
+  btn.disabled=true;btn.textContent='保存中...';
+  try{
+    var r=await api('/api/v1/admin/registration-defaults',{method:'PUT',body:JSON.stringify({
+      usage_days:days,
+      competitor_monitor:document.getElementById('rd-competitor').checked,
+      merchant_backend:document.getElementById('rd-merchant').checked,
+      analysis_center:document.getElementById('rd-analysis').checked
+    })}),d=await r.json();
+    if(!r.ok||d.code!==0)throw new Error(d.message||'保存失败');
+    document.getElementById('rd-updated-at').textContent=d.data&&d.data.updated_at?'上次保存：'+formatDate(d.data.updated_at):'';
+    toast('新用户注册默认策略已保存',true);
+  }catch(e){toast(e.message||'保存注册默认策略失败',false)}
+  finally{btn.disabled=false;btn.textContent='保存默认策略'}
+}
+
 // ===== DASHBOARD =====
 async function loadDashboard(){
   try{
@@ -443,10 +536,10 @@ async function loadDashboard(){
     document.getElementById('stat-drafts').textContent=draft;
 
     // Recent tables
-    var rHtml=''; users.items.slice(0,10).forEach(function(u){rHtml+='<div style="padding:8px 16px;border-bottom:1px solid rgba(51,65,85,0.3);font-size:12px;display:flex;justify-content:space-between"><span>'+esc(u.username)+' <span style="color:var(--txt2)">('+(u.nickname||'')+')</span></span><span style="color:var(--txt2)">'+formatDate(u.created_at)+'</span></div>'});
+    var rHtml=''; users.items.slice(0,10).forEach(function(u){rHtml+='<div style="padding:8px 16px;border-bottom:1px solid rgba(51,65,85,0.3);font-size:12px;display:flex;justify-content:space-between"><span>'+esc(u.phone||u.username)+' <span style="color:var(--txt2)">('+(u.nickname||'')+')</span></span><span style="color:var(--txt2)">'+formatDate(u.created_at)+'</span></div>'});
     document.getElementById('dash-recent-users').innerHTML=rHtml||'<div style="padding:16px;color:var(--txt2);font-size:12px">暂无数据</div>';
 
-    var aHtml=''; users.items.filter(function(u){return u.last_login_at}).sort(function(a,b){return b.last_login_at.localeCompare(a.last_login_at)}).slice(0,10).forEach(function(u){aHtml+='<div style="padding:8px 16px;border-bottom:1px solid rgba(51,65,85,0.3);font-size:12px;display:flex;justify-content:space-between"><span>'+esc(u.username)+'</span><span style="color:var(--txt2)">'+formatDate(u.last_login_at)+'</span></div>'});
+    var aHtml=''; users.items.filter(function(u){return u.last_login_at}).sort(function(a,b){return b.last_login_at.localeCompare(a.last_login_at)}).slice(0,10).forEach(function(u){aHtml+='<div style="padding:8px 16px;border-bottom:1px solid rgba(51,65,85,0.3);font-size:12px;display:flex;justify-content:space-between"><span>'+esc(u.phone||u.username)+'</span><span style="color:var(--txt2)">'+formatDate(u.last_login_at)+'</span></div>'});
     document.getElementById('dash-active-users').innerHTML=aHtml||'<div style="padding:16px;color:var(--txt2);font-size:12px">暂无数据</div>';
   }catch(e){}
 }
@@ -467,7 +560,7 @@ async function loadUsers(page){if(page)userPage=page;
     var moduleBadges=(modules.competitor_monitor?'<span class="badge badge-green">竞品</span>':'')+(modules.merchant_backend?'<span class="badge badge-blue">商家</span>':'')+(modules.analysis_center?'<span class="badge badge-yellow">分析</span>':'');
     userAccessCache[u.id]=access;
     var usage=access.expires_at?formatDate(access.expires_at):'长期有效';
-    h+='<tr><td>'+u.id+'</td><td>'+esc(u.username)+(isSuperAdmin?' <span class="badge badge-red">主管理员</span>':'')+'</td><td>'+esc(u.nickname||'-')+'</td><td>'+roleBadges+'</td><td>'+statusBadge+'</td><td>'+moduleBadges+'</td><td style="font-size:11px;color:var(--txt2)">'+usage+'</td><td style="font-size:11px;color:var(--txt2)">'+formatDate(u.last_login_at)+'</td>'
+    h+='<tr><td>'+u.id+'</td><td>'+esc(u.phone||u.username)+(isSuperAdmin?' <span class="badge badge-red">主管理员</span>':'')+'</td><td>'+esc(u.nickname||'-')+'</td><td>'+roleBadges+'</td><td>'+statusBadge+'</td><td>'+moduleBadges+'</td><td style="font-size:11px;color:var(--txt2)">'+usage+'</td><td style="font-size:11px;color:var(--txt2)">'+formatDate(u.last_login_at)+'</td>'
     +'<td>'+(isSuperAdmin?'<button class="btn btn-outline btn-sm" onclick="showUserAccess('+u.id+',\''+esc(u.username)+'\')">查看全部权限</button> <span style="font-size:11px;color:var(--txt2)">状态和角色受保护</span>':'<button class="btn btn-outline btn-sm" onclick="showUserAccess('+u.id+',\''+esc(u.username)+'\')">权限</button> <button class="btn btn-outline btn-sm" onclick="showUserRoles('+u.id+',\''+esc(u.username)+'\',\''+(u.RoleNames||'')+'\')">角色</button> '
     +(u.status===1?'<button class="btn btn-danger btn-sm" onclick="toggleUser('+u.id+',0,this)">禁用</button>':'<button class="btn btn-outline btn-sm" onclick="toggleUser('+u.id+',1,this)">启用</button>'))
     +'</td></tr>';

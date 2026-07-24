@@ -8,6 +8,7 @@ type ControlEvent struct {
 type User struct {
 	ID           int64         `json:"id" db:"id"`
 	Username     string        `json:"username" db:"username"`
+	Phone        *string       `json:"phone,omitempty" db:"phone"`
 	Email        *string       `json:"email" db:"email"`
 	PasswordHash string        `json:"-" db:"password_hash"`
 	Nickname     *string       `json:"nickname" db:"nickname"`
@@ -128,15 +129,25 @@ type AccountAccess struct {
 // Request / Response types
 
 type RegisterRequest struct {
-	Username string `json:"username"`
+	Phone    string `json:"phone,omitempty"`
+	Username string `json:"username,omitempty"` // legacy compatibility for existing clients
 	Password string `json:"password"`
+	SMSCode  string `json:"sms_code,omitempty"`
 	Email    string `json:"email,omitempty"`
 	Nickname string `json:"nickname,omitempty"`
 }
 
 type LoginRequest struct {
-	Username string `json:"username"`
+	Phone    string `json:"phone,omitempty"`
+	Username string `json:"username,omitempty"` // legacy/admin compatibility
 	Password string `json:"password"`
+}
+
+type SendSMSRequest struct {
+	Phone       string `json:"phone"`
+	Purpose     string `json:"purpose"`
+	CaptchaID   string `json:"captcha_id"`
+	CaptchaCode string `json:"captcha_code"`
 }
 
 type LoginResponse struct {
@@ -149,6 +160,7 @@ type LoginResponse struct {
 type UserInfo struct {
 	ID       int64         `json:"id"`
 	Username string        `json:"username"`
+	Phone    *string       `json:"phone,omitempty"`
 	Nickname string        `json:"nickname"`
 	Roles    []string      `json:"roles"`
 	Status   int           `json:"status"`
@@ -175,6 +187,7 @@ type UpdateProfileRequest struct {
 type ChangePasswordRequest struct {
 	OldPassword string `json:"old_password"`
 	NewPassword string `json:"new_password"`
+	SMSCode     string `json:"sms_code,omitempty"`
 }
 
 type HeartbeatRequest struct {
@@ -256,6 +269,28 @@ type UpdateUserAccessRequest struct {
 	ExpiresAt         *string `json:"expires_at"`
 }
 
+type RegistrationDefaults struct {
+	UsageDays         int    `json:"usage_days"`
+	CompetitorMonitor bool   `json:"competitor_monitor"`
+	MerchantBackend   bool   `json:"merchant_backend"`
+	AnalysisCenter    bool   `json:"analysis_center"`
+	UpdatedAt         string `json:"updated_at,omitempty"`
+}
+
+type UpdateRegistrationDefaultsRequest struct {
+	UsageDays         int  `json:"usage_days"`
+	CompetitorMonitor bool `json:"competitor_monitor"`
+	MerchantBackend   bool `json:"merchant_backend"`
+	AnalysisCenter    bool `json:"analysis_center"`
+}
+
+func (r UpdateRegistrationDefaultsRequest) Validate() string {
+	if r.UsageDays < 1 || r.UsageDays > 3650 {
+		return "默认赠送天数须为1-3650天"
+	}
+	return ""
+}
+
 type PaginatedResponse struct {
 	Items    any   `json:"items"`
 	Total    int64 `json:"total"`
@@ -270,8 +305,17 @@ type CheckVersionResponse struct {
 }
 
 func (r RegisterRequest) Validate() string {
-	if len(r.Username) < 3 || len(r.Username) > 32 {
+	if r.Phone == "" && r.Username == "" {
+		return "手机号不能为空"
+	}
+	if r.Phone != "" && len(r.Phone) != 11 {
+		return "手机号格式错误"
+	}
+	if r.Phone == "" && (len(r.Username) < 3 || len(r.Username) > 32) {
 		return "用户名长度须为3-32字符"
+	}
+	if r.Phone != "" && len(r.SMSCode) != 6 {
+		return "短信验证码须为6位"
 	}
 	if len(r.Password) < 6 || len(r.Password) > 64 {
 		return "密码长度须为6-64字符"
@@ -280,8 +324,8 @@ func (r RegisterRequest) Validate() string {
 }
 
 func (r LoginRequest) Validate() string {
-	if r.Username == "" {
-		return "用户名不能为空"
+	if r.Phone == "" && r.Username == "" {
+		return "手机号不能为空"
 	}
 	if r.Password == "" {
 		return "密码不能为空"
@@ -289,10 +333,20 @@ func (r LoginRequest) Validate() string {
 	return ""
 }
 
-func (r ChangePasswordRequest) Validate() string {
-	if r.OldPassword == "" {
-		return "旧密码不能为空"
+func (r SendSMSRequest) Validate() string {
+	if len(r.Phone) != 11 {
+		return "手机号格式错误"
 	}
+	if r.Purpose != "register" && r.Purpose != "password_reset" {
+		return "验证码用途错误"
+	}
+	if r.CaptchaID == "" || r.CaptchaCode == "" {
+		return "请先完成图形验证码"
+	}
+	return ""
+}
+
+func (r ChangePasswordRequest) Validate() string {
 	if len(r.NewPassword) < 6 || len(r.NewPassword) > 64 {
 		return "新密码长度须为6-64字符"
 	}

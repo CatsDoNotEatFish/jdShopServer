@@ -12,6 +12,7 @@
 |------|------|------|
 | id | INTEGER PK | 自增主键 |
 | username | TEXT NOT NULL UNIQUE | 用户名 |
+| phone | TEXT UNIQUE | 绑定手机号；新注册普通账号必填，迁移前旧账号和主管理员可为空 |
 | email | TEXT | 邮箱 |
 | password_hash | TEXT NOT NULL | bcrypt 加密后的密码 |
 | nickname | TEXT | 显示昵称 |
@@ -21,7 +22,9 @@
 | created_at | TEXT NOT NULL DEFAULT (datetime('now')) | |
 | updated_at | TEXT NOT NULL DEFAULT (datetime('now')) | |
 
-索引：`idx_users_username(username)`、`idx_users_status(status)`
+索引：`idx_users_username(username)`、`idx_users_phone(phone) WHERE phone IS NOT NULL`、`idx_users_status(status)`
+
+新注册账号把手机号同时写入 `phone` 和内部兼容字段 `username`；登录优先按 `phone` 查找。`username` 暂时保留，用于主管理员 `admin` 和迁移前旧账号兼容，不再作为新用户注册字段。
 
 ### user_access_control
 
@@ -36,7 +39,22 @@
 | expires_at | TEXT | 到期时间，NULL 表示长期有效 |
 | updated_at | TEXT NOT NULL | 最近修改时间 |
 
-新注册账号默认开放竞品监控，商家后台和分析中心关闭，默认使用期 30 天。
+新账号注册时从 `registration_defaults` 复制赠送天数和三个板块开关。之后修改注册默认策略不会追溯改变已写入本表的账号授权。
+
+### registration_defaults
+
+新用户注册默认策略。该表是固定 `id=1` 的单例配置，只能由唯一主管理员通过管理接口修改。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK, CHECK(id=1) | 单例主键，固定为 1 |
+| usage_days | INTEGER NOT NULL | 默认赠送天数，范围 1-3650 |
+| competitor_monitor | INTEGER NOT NULL DEFAULT 1 | 新账号是否默认开放竞品监控 |
+| merchant_backend | INTEGER NOT NULL DEFAULT 0 | 新账号是否默认开放商家后台 |
+| analysis_center | INTEGER NOT NULL DEFAULT 0 | 新账号是否默认开放分析中心 |
+| updated_at | TEXT NOT NULL | 最近保存时间 |
+
+迁移时初始化为 30 天、仅开放竞品监控。注册成功时根据 `usage_days` 从当前 UTC 时间计算 `expires_at`，并把三个开关复制到 `user_access_control`；因此它是注册模板，不是所有账号共享的实时权限。
 
 ### refresh_tokens
 
@@ -202,6 +220,36 @@ version:delete     # 删除版本
 | created_at | TEXT NOT NULL DEFAULT (datetime('now')) | |
 
 索引：`idx_login_logs_user(user_id, created_at DESC)`、`idx_login_logs_ip(ip_address, created_at)`
+
+### sms_verifications
+
+短信验证码发送和校验记录。验证码正文不落库，只保存使用 JWT 密钥作为 pepper 的 HMAC-SHA256；平台 API Key 也不进入数据库。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 自增主键 |
+| phone | TEXT NOT NULL | 接收手机号 |
+| purpose | TEXT NOT NULL | `register` 或 `password_reset` |
+| code_hash | TEXT NOT NULL | 验证码 HMAC-SHA256，不保存明文 |
+| sent_at | TEXT NOT NULL | 短信平台成功接受请求的时间 |
+| expires_at | TEXT NOT NULL | 5分钟到期时间 |
+| attempts | INTEGER NOT NULL DEFAULT 0 | 错误验证次数，最多5次 |
+| consumed | INTEGER NOT NULL DEFAULT 0 | 是否已使用/作废 |
+| request_ip | TEXT | 发送请求来源IP，用于小时限流 |
+| created_at | TEXT NOT NULL | 记录创建时间 |
+
+索引：`idx_sms_verifications_phone_purpose(phone, purpose, id DESC)`、`idx_sms_verifications_sent_at(sent_at)`。
+
+### schema_migrations
+
+迁移版本记录表，防止包含 `ALTER TABLE` 的迁移在服务重启时重复执行。
+
+升级早期版本数据库时，迁移器会根据现存表、字段和索引补登记001-005的执行状态。若旧程序已经添加 `users.phone`、但尚未完成或记录005迁移，新迁移器会跳过重复的 `ALTER TABLE`，继续补齐短信表和索引，不需要删除或重建原数据库。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| version | TEXT PK | 已完成的SQL迁移文件名 |
+| applied_at | TEXT NOT NULL | 应用时间 |
 
 ## 初始化数据
 

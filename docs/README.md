@@ -20,7 +20,7 @@ CONFIG_PATH=/opt/jdshop/config.yaml JWT_SECRET=your-secret ./jdshop-server serve
 ```
 
 健康检查: `curl http://127.0.0.1:8080/api/v1/health`
-默认主管理员: `admin` / `admin123`（首次部署后立即改密；只有该账号可进入 `/admin`）
+默认主管理员: `admin` / `admin123`（首次部署后立即改密；生产管理台为 `https://www.jdshop.bbroot.com/admin`）
 
 ## 技术栈
 
@@ -38,7 +38,7 @@ CONFIG_PATH=/opt/jdshop/config.yaml JWT_SECRET=your-secret ./jdshop-server serve
 | 文档 | 内容 |
 |------|------|
 | [架构设计](architecture.md) | 部署架构、分层设计、模块划分、1C1G 资源规划 |
-| [数据库表设计](database-schema.md) | 12 张核心表完整定义、索引、初始数据 |
+| [数据库表设计](database-schema.md) | 15 张核心/迁移表完整定义、索引、初始数据 |
 | [API 接口参考](api-reference.md) | **所有接口的详细说明、请求示例、返回示例、curl 命令** |
 | [鉴权与权限](auth-design.md) | JWT 双 Token 机制、Refresh Token 轮转、RBAC 模型 |
 | [部署指南](deployment.md) | Ubuntu、Nginx、systemd、Let's Encrypt/ZeroSSL、备份与回滚 |

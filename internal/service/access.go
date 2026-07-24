@@ -11,21 +11,41 @@ import (
 const defaultLeaseSeconds = 600
 
 type AccessService struct {
-	repo               *repository.AccessRepo
-	superAdminUsername string
+	repo                     *repository.AccessRepo
+	registrationDefaultsRepo *repository.RegistrationDefaultsRepo
+	superAdminUsername       string
 }
 
 var ErrInvalidExpiry = errors.New("invalid expiry")
 
-func NewAccessService(repo *repository.AccessRepo, superAdminUsername string) *AccessService {
+func NewAccessService(repo *repository.AccessRepo, registrationDefaultsRepo *repository.RegistrationDefaultsRepo, superAdminUsername string) *AccessService {
 	if superAdminUsername == "" {
 		superAdminUsername = "admin"
 	}
-	return &AccessService{repo: repo, superAdminUsername: superAdminUsername}
+	return &AccessService{
+		repo:                     repo,
+		registrationDefaultsRepo: registrationDefaultsRepo,
+		superAdminUsername:       superAdminUsername,
+	}
 }
 
-func (s *AccessService) CreateDefault(userID int64, usageDays int) error {
-	return s.repo.CreateDefault(userID, usageDays)
+func (s *AccessService) CreateDefault(userID int64) error {
+	defaults, err := s.registrationDefaultsRepo.Get()
+	if err != nil {
+		return err
+	}
+	return s.repo.CreateDefault(userID, defaults)
+}
+
+func (s *AccessService) RegistrationDefaults() (model.RegistrationDefaults, error) {
+	return s.registrationDefaultsRepo.Get()
+}
+
+func (s *AccessService) UpdateRegistrationDefaults(req model.UpdateRegistrationDefaultsRequest) (model.RegistrationDefaults, error) {
+	if err := s.registrationDefaultsRepo.Update(req); err != nil {
+		return model.RegistrationDefaults{}, err
+	}
+	return s.registrationDefaultsRepo.Get()
 }
 
 func (s *AccessService) Evaluate(user *model.User) (model.AccountAccess, error) {
@@ -50,7 +70,7 @@ func (s *AccessService) Evaluate(user *model.User) (model.AccountAccess, error) 
 		return model.AccountAccess{}, err
 	}
 	if policy == nil {
-		if err := s.repo.CreateDefault(user.ID, 30); err != nil {
+		if err := s.CreateDefault(user.ID); err != nil {
 			return model.AccountAccess{}, err
 		}
 		policy, err = s.repo.FindByUserID(user.ID)

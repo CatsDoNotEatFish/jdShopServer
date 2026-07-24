@@ -12,11 +12,12 @@
 | 敏感配置 | `/etc/jdshop/jdshop.env`，root:root，0600 |
 | systemd | `jdshop.service` |
 | 本地监听 | `127.0.0.1:8080` |
-| 公网域名 | `api.jdshop.bbroot.com` |
+| API域名 | `api.jdshop.bbroot.com`，只允许 `/api/*` |
+| 管理台域名 | `www.jdshop.bbroot.com`，只允许 `/admin` |
 | 反向代理 | Nginx 1.18+ |
 | HTTPS | ZeroSSL证书，由acme.sh安装和续期 |
 | 数据库 | `/opt/jdshop/data/app.db`，SQLite WAL |
-| 管理台 | `https://api.jdshop.bbroot.com/admin` |
+| 管理台 | `https://www.jdshop.bbroot.com/admin` |
 | 健康检查 | `https://api.jdshop.bbroot.com/api/v1/health` |
 
 不要把服务器IP、管理员密码、JWT密钥、证书账号邮箱或临时下载签名写入本文和Git。
@@ -33,6 +34,7 @@ timedatectl status
 df -h /
 free -h
 getent hosts api.jdshop.bbroot.com
+getent hosts www.jdshop.bbroot.com
 ```
 
 应满足：Ubuntu 22.04、`x86_64`、当前用户root、域名解析到当前公网IP。云安全组仅放通管理来源的22，以及公网80/443。
@@ -144,7 +146,16 @@ openssl rand -base64 48
 ```text
 JWT_SECRET=实际随机密钥
 SUPER_ADMIN_USERNAME=admin
+CORS_ALLOWED_ORIGINS=https://www.jdshop.bbroot.com,http://localhost:8788,http://127.0.0.1:8788
+SMSBAO_ENABLED=true
+SMSBAO_USERNAME=短信宝后台用户名
+SMSBAO_API_KEY=新建且未泄露的APIKey
+SMSBAO_GOODSID=已报备产品ID
+SMSBAO_CONTENT_TEMPLATE="【已报备短信签名】您的验证码是%s，5分钟内有效。"
+AUTH_REQUIRE_ENCRYPTED_REQUESTS=true
 ```
+
+确认安装后的 `/etc/systemd/system/jdshop.service` 包含 `UMask=0077`；数据库、日志和备份不得对其他系统用户开放读取权限。
 
 然后：
 
@@ -154,7 +165,7 @@ chmod 0600 /etc/jdshop/jdshop.env
 stat -c '%U:%G %a %n' /etc/jdshop/jdshop.env
 ```
 
-不要执行 `systemctl cat jdshop` 后把包含密钥的输出复制到聊天或工单。systemd unit只引用环境文件，不内联密钥。
+不要执行 `systemctl cat jdshop` 后把包含密钥的输出复制到聊天或工单。systemd unit只引用环境文件，不内联密钥。生产管理台跨域调用API，`CORS_ALLOWED_ORIGINS` 缺少 `https://www.jdshop.bbroot.com` 时会在浏览器中表现为登录请求被CORS拦截。短信签名、模板和产品ID必须先在短信宝后台审核报备；任何曾经粘贴到聊天或工单的API Key都必须先轮换再上线。
 
 ## 6. 安装和启动systemd
 
@@ -182,6 +193,8 @@ install -o root -g root -m 0644 \
 
 sed -i 's/api\.yourdomain\.com/api.jdshop.bbroot.com/g' \
   /etc/nginx/sites-available/jdshop
+sed -i 's/www\.yourdomain\.com/www.jdshop.bbroot.com/g' \
+  /etc/nginx/sites-available/jdshop
 
 ln -sfn /etc/nginx/sites-available/jdshop /etc/nginx/sites-enabled/jdshop
 rm -f /etc/nginx/sites-enabled/default
@@ -189,14 +202,14 @@ nginx -t
 systemctl reload nginx
 ```
 
-先用GET验证，不要用HEAD：
+证书签发前的引导配置只开放ACME目录，根路径应返回404：
 
 ```bash
-curl -i -H 'Host: api.jdshop.bbroot.com' http://127.0.0.1/api/v1/health
-curl -i http://api.jdshop.bbroot.com/api/v1/health
+curl -i -H 'Host: api.jdshop.bbroot.com' http://127.0.0.1/
+curl -i -H 'Host: www.jdshop.bbroot.com' http://127.0.0.1/
 ```
 
-### 7.1 反代后健康检查404
+### 7.1 启用生产HTTPS模板后健康检查仍为404
 
 曾出现Nginx配置测试成功，但Host请求 `/api/v1/health` 返回404。排查顺序：
 
@@ -207,7 +220,7 @@ curl -i http://api.jdshop.bbroot.com/api/v1/health
 5. 用 `curl http://127.0.0.1:8080/api/v1/health` 排除Go服务问题；
 6. 修正后 `nginx -t && systemctl reload nginx`。
 
-不要在反代未验证时继续申请证书，否则会把HTTP路由问题和证书问题混在一起。
+HTTP引导模板返回404是预期行为。只有证书安装并切换到 `nginx-https.conf` 后，API域名的 `/api/v1/health` 才应返回200；此时若仍为404，再按以上顺序排查。
 
 ## 8. 安装ZeroSSL证书
 
@@ -219,6 +232,7 @@ curl https://get.acme.sh | sh -s email=证书通知邮箱
 
 /root/.acme.sh/acme.sh --issue \
   -d api.jdshop.bbroot.com \
+  -d www.jdshop.bbroot.com \
   --webroot /var/www/html
 
 install -d -o root -g root -m 0700 /etc/nginx/ssl/jdshop
@@ -238,6 +252,8 @@ install -o root -g root -m 0644 \
 
 sed -i 's/api\.yourdomain\.com/api.jdshop.bbroot.com/g' \
   /etc/nginx/sites-available/jdshop
+sed -i 's/www\.yourdomain\.com/www.jdshop.bbroot.com/g' \
+  /etc/nginx/sites-available/jdshop
 
 nginx -t
 systemctl reload nginx
@@ -250,6 +266,10 @@ nginx -t
 systemctl reload nginx
 curl -i https://api.jdshop.bbroot.com/api/v1/health
 curl -i http://api.jdshop.bbroot.com/api/v1/health
+curl -I https://www.jdshop.bbroot.com/
+curl -I https://www.jdshop.bbroot.com/admin
+curl -o /dev/null -sS -w '%{http_code}\n' https://api.jdshop.bbroot.com/admin
+curl -o /dev/null -sS -w '%{http_code}\n' https://www.jdshop.bbroot.com/api/v1/health
 /root/.acme.sh/acme.sh --list
 crontab -l
 ```
@@ -258,13 +278,20 @@ HTTP检查必须使用GET。`curl -I`是HEAD，而健康接口只允许GET，因
 
 ## 9. 首次上线后的安全动作
 
-1. 打开 `/admin`，使用内置主管理员登录；
+1. 打开 `https://www.jdshop.bbroot.com/admin`，使用内置主管理员登录；
 2. 立即修改默认密码；
 3. 退出并用新密码重新登录；
-4. 确认普通注册账号无法进入 `/admin`；
-5. 确认主管理员没有禁用、改权限、改角色按钮；
-6. 确认普通账号默认仅有竞品监控和30天使用期；
-7. 不在聊天、截图或Shell历史中保存密码和JWT密钥。
+4. 确认普通注册账号无法登录管理台；
+5. 确认 `https://api.jdshop.bbroot.com/` 和该域名的 `/admin` 均返回404；
+6. 确认 `www` 域名下的 `/api/*` 返回404；
+7. 确认主管理员没有禁用、改权限、改角色按钮；
+8. 打开“注册默认”，设置新用户默认赠送天数和三个板块权限并保存；
+9. 确认注册页必须先完成图形验证码才能请求短信；使用已授权的测试手机号和正式报备内容发送一次，核对60秒倒计时与5分钟有效期；
+10. 等待至少60秒后再测试改密短信，不连续向同一手机号发送相同内容；单手机号当天最多执行6次；
+11. 注册一个临时普通账号，确认手机号加密码可以登录，并获得刚才设置的使用期和板块权限，同时已有账号权限不变；
+12. 修改密码时确认短信验证通过后旧Access/Refresh Token全部失效，新密码可重新登录；
+13. 从早期测试包升级时确认启动日志包含 `Database migrations completed`；迁移器可以识别未记录但已存在的 `phone` 字段和短信表，禁止通过删除生产数据库解决重复字段错误；
+14. 不在聊天、截图或Shell历史中保存密码、JWT密钥或短信API Key。
 
 ## 10. 备份和恢复演练
 
@@ -325,6 +352,7 @@ systemctl status jdshop --no-pager --full
 journalctl -u jdshop -n 100 --no-pager
 curl -fsS http://127.0.0.1:8080/api/v1/health
 curl -fsS https://api.jdshop.bbroot.com/api/v1/health
+curl -I https://www.jdshop.bbroot.com/admin
 nginx -t
 ```
 

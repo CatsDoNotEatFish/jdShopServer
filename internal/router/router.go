@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -29,11 +30,18 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 	heartbeatRepo := repository.NewHeartbeatRepo(db)
 	loginLogRepo := repository.NewLoginLogRepo(db)
 	accessRepo := repository.NewAccessRepo(db)
+	registrationDefaultsRepo := repository.NewRegistrationDefaultsRepo(db)
+	smsVerificationRepo := repository.NewSMSVerificationRepo(db)
 
 	// Services
-	accessSvc := service.NewAccessService(accessRepo, cfg.Auth.SuperAdminUsername)
-	authSvc := service.NewAuthService(userRepo, tokenRepo, loginLogRepo, accessSvc, cfg.Auth)
-	userSvc := service.NewUserService(userRepo, tokenRepo, accessSvc, cfg.Auth)
+	accessSvc := service.NewAccessService(accessRepo, registrationDefaultsRepo, cfg.Auth.SuperAdminUsername)
+	smsSvc := service.NewSMSService(smsVerificationRepo, cfg.SMS, cfg.Auth.JWTSecret)
+	requestCipher, err := service.NewRequestCipher(filepath.Join(filepath.Dir(cfg.Database.Path), "auth_encryption_private.pem"))
+	if err != nil {
+		panic(err)
+	}
+	authSvc := service.NewAuthService(userRepo, tokenRepo, loginLogRepo, accessSvc, smsSvc, cfg.Auth)
+	userSvc := service.NewUserService(userRepo, tokenRepo, accessSvc, smsSvc, cfg.Auth)
 	announcementSvc := service.NewAnnouncementService(announcementRepo)
 	versionSvc := service.NewVersionService(versionRepo)
 	heartbeatSvc := service.NewHeartbeatService(heartbeatRepo, versionRepo, userRepo, accessSvc)
@@ -42,8 +50,8 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 
 	// Handlers
 	healthH := ih.NewHealthHandler(version)
-	authH := ih.NewAuthHandler(authSvc)
-	userH := ih.NewUserHandler(userSvc)
+	authH := ih.NewAuthHandler(authSvc, smsSvc, requestCipher, cfg.Auth.RequireEncryptedRequests)
+	userH := ih.NewUserHandler(userSvc, requestCipher, cfg.Auth.RequireEncryptedRequests)
 	announcementH := ih.NewAnnouncementHandler(announcementSvc)
 	versionH := ih.NewVersionHandler(versionSvc)
 	heartbeatH := ih.NewHeartbeatHandler(heartbeatSvc)
@@ -73,22 +81,16 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 		MaxAge:           300,
 	}))
 
-	// Static files (API 控制台 + 管理后台)
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "static/index.html")
-	})
-	r.Get("/admin", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "static/admin.html")
-	})
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-
 	// Public routes (no auth)
 	r.Group(func(r chi.Router) {
 		r.Use(rateLimiter.Handler)
 
 		r.Get("/api/v1/health", healthH.Check)
+		r.Get("/api/v1/auth/encryption-key", authH.EncryptionKey)
 		r.Post("/api/v1/auth/register", authH.Register)
 		r.Post("/api/v1/auth/login", authH.Login)
+		r.Get("/api/v1/auth/captcha", authH.Captcha)
+		r.Post("/api/v1/auth/sms/send", authH.SendSMS)
 		r.Post("/api/v1/auth/refresh", authH.Refresh)
 		r.Post("/api/v1/auth/logout", authH.Logout)
 		r.Get("/api/v1/announcements", announcementH.PublicList)
@@ -116,6 +118,8 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 		r.Put("/api/v1/admin/users/{id}/status", adminH.UpdateUserStatus)
 		r.Post("/api/v1/admin/users/{id}/roles", adminH.AssignUserRoles)
 		r.Put("/api/v1/admin/users/{id}/access", adminH.UpdateUserAccess)
+		r.Get("/api/v1/admin/registration-defaults", adminH.GetRegistrationDefaults)
+		r.Put("/api/v1/admin/registration-defaults", adminH.UpdateRegistrationDefaults)
 
 		// Roles
 		r.Get("/api/v1/admin/roles", adminH.ListRoles)

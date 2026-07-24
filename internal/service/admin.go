@@ -56,6 +56,14 @@ func (s *AdminService) UpdateUserAccess(userID int64, req model.UpdateUserAccess
 	return access, err
 }
 
+func (s *AdminService) RegistrationDefaults() (model.RegistrationDefaults, error) {
+	return s.accessSvc.RegistrationDefaults()
+}
+
+func (s *AdminService) UpdateRegistrationDefaults(req model.UpdateRegistrationDefaultsRequest) (model.RegistrationDefaults, error) {
+	return s.accessSvc.UpdateRegistrationDefaults(req)
+}
+
 func (s *AdminService) ListUsers(page, pageSize int, keyword string, status *int) ([]model.UserWithRoles, int64, error) {
 	users, total, err := s.userRepo.List(page, pageSize, keyword, status)
 	if err != nil {

@@ -134,6 +134,33 @@ func (h *AdminHandler) UpdateUserAccess(w http.ResponseWriter, r *http.Request) 
 	respondOK(w, access)
 }
 
+func (h *AdminHandler) GetRegistrationDefaults(w http.ResponseWriter, r *http.Request) {
+	defaults, err := h.adminSvc.RegistrationDefaults()
+	if err != nil {
+		respondError(w, 10500, "服务内部错误")
+		return
+	}
+	respondOK(w, defaults)
+}
+
+func (h *AdminHandler) UpdateRegistrationDefaults(w http.ResponseWriter, r *http.Request) {
+	var req model.UpdateRegistrationDefaultsRequest
+	if err := decodeBody(r, &req); err != nil {
+		respondError(w, 10001, "请求格式错误")
+		return
+	}
+	if msg := req.Validate(); msg != "" {
+		respondError(w, 10001, msg)
+		return
+	}
+	defaults, err := h.adminSvc.UpdateRegistrationDefaults(req)
+	if err != nil {
+		respondError(w, 10500, "服务内部错误")
+		return
+	}
+	respondOK(w, defaults)
+}
+
 // Roles
 
 func (h *AdminHandler) ListRoles(w http.ResponseWriter, r *http.Request) {

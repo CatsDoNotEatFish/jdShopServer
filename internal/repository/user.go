@@ -24,9 +24,9 @@ func (r *UserRepo) Create(user *model.User) error {
 	}
 	defer tx.Rollback()
 	result, err := tx.Exec(
-		`INSERT INTO users (username, email, password_hash, nickname, avatar_url, status)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		user.Username, user.Email, user.PasswordHash, user.Nickname, user.AvatarURL, user.Status,
+		`INSERT INTO users (username, phone, email, password_hash, nickname, avatar_url, status)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		user.Username, user.Phone, user.Email, user.PasswordHash, user.Nickname, user.AvatarURL, user.Status,
 	)
 	if err != nil {
 		return err
@@ -42,9 +42,27 @@ func (r *UserRepo) Create(user *model.User) error {
 func (r *UserRepo) FindByUsername(username string) (*model.User, error) {
 	user := &model.User{}
 	err := r.db.QueryRow(
-		`SELECT id, username, email, password_hash, nickname, avatar_url, status, last_login_at, created_at, updated_at
+		`SELECT id, username, phone, email, password_hash, nickname, avatar_url, status, last_login_at, created_at, updated_at
 		 FROM users WHERE username = ?`, username,
-	).Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Nickname,
+	).Scan(&user.ID, &user.Username, &user.Phone, &user.Email, &user.PasswordHash, &user.Nickname,
+		&user.AvatarURL, &user.Status, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	roles, _ := r.UserRoles(user.ID)
+	user.Roles = roles
+	return user, nil
+}
+
+func (r *UserRepo) FindByPhone(phone string) (*model.User, error) {
+	user := &model.User{}
+	err := r.db.QueryRow(
+		`SELECT id, username, phone, email, password_hash, nickname, avatar_url, status, last_login_at, created_at, updated_at
+		 FROM users WHERE phone = ?`, phone,
+	).Scan(&user.ID, &user.Username, &user.Phone, &user.Email, &user.PasswordHash, &user.Nickname,
 		&user.AvatarURL, &user.Status, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -60,9 +78,9 @@ func (r *UserRepo) FindByUsername(username string) (*model.User, error) {
 func (r *UserRepo) FindByID(id int64) (*model.User, error) {
 	user := &model.User{}
 	err := r.db.QueryRow(
-		`SELECT id, username, email, password_hash, nickname, avatar_url, status, last_login_at, created_at, updated_at
+		`SELECT id, username, phone, email, password_hash, nickname, avatar_url, status, last_login_at, created_at, updated_at
 		 FROM users WHERE id = ?`, id,
-	).Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Nickname,
+	).Scan(&user.ID, &user.Username, &user.Phone, &user.Email, &user.PasswordHash, &user.Nickname,
 		&user.AvatarURL, &user.Status, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -80,9 +98,9 @@ func (r *UserRepo) List(page, pageSize int, keyword string, status *int) ([]mode
 	var args []any
 
 	if keyword != "" {
-		conditions = append(conditions, "(u.username LIKE ? OR u.nickname LIKE ? OR u.email LIKE ?)")
+		conditions = append(conditions, "(u.username LIKE ? OR u.phone LIKE ? OR u.nickname LIKE ? OR u.email LIKE ?)")
 		kw := "%" + keyword + "%"
-		args = append(args, kw, kw, kw)
+		args = append(args, kw, kw, kw, kw)
 	}
 	if status != nil {
 		conditions = append(conditions, "u.status = ?")
@@ -102,7 +120,7 @@ func (r *UserRepo) List(page, pageSize int, keyword string, status *int) ([]mode
 
 	offset := (page - 1) * pageSize
 	query := fmt.Sprintf(
-		`SELECT u.id, u.username, u.email, u.password_hash, u.nickname, u.avatar_url, u.status,
+		`SELECT u.id, u.username, u.phone, u.email, u.password_hash, u.nickname, u.avatar_url, u.status,
 		        u.last_login_at, u.created_at, u.updated_at,
 		        COALESCE(GROUP_CONCAT(r.name), '') as role_names,
 		        hb.created_at, hb.device_id, hb.platform, hb.app_version
@@ -128,7 +146,7 @@ func (r *UserRepo) List(page, pageSize int, keyword string, status *int) ([]mode
 	var users []model.UserWithRoles
 	for rows.Next() {
 		var u model.UserWithRoles
-		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.Nickname,
+		if err := rows.Scan(&u.ID, &u.Username, &u.Phone, &u.Email, &u.PasswordHash, &u.Nickname,
 			&u.AvatarURL, &u.Status, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt, &u.RoleNames,
 			&u.LastHeartbeatAt, &u.HeartbeatDevice, &u.HeartbeatPlatform, &u.HeartbeatVersion); err != nil {
 			return nil, 0, err

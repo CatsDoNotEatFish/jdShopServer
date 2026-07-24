@@ -35,6 +35,15 @@ CONFIG_PATH=config.dev.yaml JWT_SECRET=dev-secret go run . serve
 
 默认监听 `127.0.0.1:8080`。
 
+Go应用只提供API，本地访问 `/`、`/admin` 和 `/static/*` 都会返回404。需要调试管理台时另开终端静态提供HTML：
+
+```powershell
+chcp 65001
+python -m http.server 8788 --directory static
+```
+
+然后打开 `http://127.0.0.1:8788/admin.html`。管理台检测到localhost后会调用 `http://127.0.0.1:8080`，默认CORS配置允许该本地来源。8788 专门留给管理台，避免与客户端本地服务的 8787 端口冲突。
+
 ## 分层开发规范
 
 ### 1. Model 层 (`internal/model/`)

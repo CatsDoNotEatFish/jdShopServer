@@ -19,11 +19,12 @@ type UserService struct {
 	userRepo  *repository.UserRepo
 	tokenRepo *repository.TokenRepo
 	accessSvc *AccessService
+	smsSvc    *SMSService
 	cfg       config.AuthConfig
 }
 
-func NewUserService(userRepo *repository.UserRepo, tokenRepo *repository.TokenRepo, accessSvc *AccessService, cfg config.AuthConfig) *UserService {
-	return &UserService{userRepo: userRepo, tokenRepo: tokenRepo, accessSvc: accessSvc, cfg: cfg}
+func NewUserService(userRepo *repository.UserRepo, tokenRepo *repository.TokenRepo, accessSvc *AccessService, smsSvc *SMSService, cfg config.AuthConfig) *UserService {
+	return &UserService{userRepo: userRepo, tokenRepo: tokenRepo, accessSvc: accessSvc, smsSvc: smsSvc, cfg: cfg}
 }
 
 func (s *UserService) GetProfile(userID int64) (*model.User, error) {
@@ -69,8 +70,17 @@ func (s *UserService) ChangePassword(userID int64, req model.ChangePasswordReque
 		return ErrUserNotFound
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
-		return ErrWrongPassword
+	if user.Phone != nil && *user.Phone != "" {
+		if err := s.smsSvc.VerifyCode(*user.Phone, SMSPurposePasswordReset, req.SMSCode); err != nil {
+			return err
+		}
+	} else {
+		if req.OldPassword == "" {
+			return ErrWrongPassword
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
+			return ErrWrongPassword
+		}
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), s.cfg.BcryptCost)

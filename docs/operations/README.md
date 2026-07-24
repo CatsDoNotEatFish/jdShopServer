@@ -27,8 +27,8 @@
 - `main.go`: 入口 (serve / migrate / version 三个子命令)
 
 ### 数据库
-- 12 张核心表: users, refresh_tokens, user_auth_versions, user_access_control, roles, permissions,
-  role_permissions, user_roles, announcements, app_versions, heartbeat_logs, login_logs
+- 15 张核心/迁移表: users, refresh_tokens, user_auth_versions, user_access_control, registration_defaults,
+  sms_verifications, schema_migrations, roles, permissions, role_permissions, user_roles, announcements, app_versions, heartbeat_logs, login_logs
 - 预置 admin 管理员 (admin/admin123) 和 user 普通用户角色
 - 16 个预置权限码
 - SQLite WAL 模式 + 必要索引 + 外键约束
@@ -89,7 +89,7 @@
 ## 2026-07-22 账号授权与三板块控制
 
 - 新增 `user_access_control`，保存账号到期时间和竞品监控、商家后台、分析中心三个开关。
-- 新注册账号默认只开放竞品监控，默认使用期 30 天。
+- 当时的新注册账号初始策略为仅开放竞品监控、使用期 30 天；该策略现已支持在管理控制台配置，见后文“新用户注册默认策略”。
 - 新增管理员账号授权接口 `PUT /api/v1/admin/users/:id/access`。
 - 心跳响应携带授权租约；客户端收到禁用/到期状态后锁定本地业务并返回登录页。
 - 管理控制台用户管理新增使用期和板块权限编辑。
@@ -105,7 +105,7 @@
 
 ## 2026-07-23 生产部署与客户端 0.2.3
 
-- 香港生产服务器完成 Ubuntu 22.04、systemd、Nginx、SQLite 和 HTTPS 部署，域名为 `api.jdshop.bbroot.com`。
+- 香港生产服务器完成 Ubuntu 22.04、systemd、Nginx、SQLite 和 HTTPS 部署；`api.jdshop.bbroot.com` 仅提供API，`www.jdshop.bbroot.com` 仅提供主管理员控制台。
 - Let's Encrypt 因共享注册域签发频率限制暂时不可用，改用 ZeroSSL/acme.sh；证书安装到 `/etc/nginx/ssl/jdshop/`，由 cron 自动续期。
 - systemd 模板改用 `/etc/jdshop/jdshop.env`，JWT 密钥不再内联到 unit 或部署包。
 - 数据库备份文件名改为 `app-YYYY-MM-DD-HHMMSS.db`，允许同一天多次手工和定时备份。
@@ -113,3 +113,35 @@
 - Windows 客户端发布为 `0.2.3`（版本码 `2026072302`），独立更新器展示下载/校验/解压/备份/安装/健康检查/回滚进度。
 - 强制更新窗口在支持新启动器的客户端中不可取消、不可关闭；旧启动器第一次跨版本升级仍受引导版本边界限制。
 - 客户端更新包使用阿里云 OSS 永久 HTTPS 对象地址，禁止把带 `Expires` 的一次性签名URL登记为版本下载地址。
+
+## 2026-07-23 API域名与管理台域名隔离
+
+- 删除Go服务根路径的可交互API测试台以及Go侧 `/admin`、`/static/*` 路由，API应用对这些路径统一返回404。
+- 删除发布目录中的 `static/index.html`；升级脚本会同时清理服务器遗留的测试页面。
+- `api.jdshop.bbroot.com` 只允许 `/api/*`，根路径和 `/admin` 由Nginx固定返回404。
+- `www.jdshop.bbroot.com` 只静态提供 `/admin`，根路径跳转到管理台，`/api/*` 和其他路径返回404。
+- 管理台使用 `https://api.jdshop.bbroot.com` 作为独立API来源，服务端CORS加入 `https://www.jdshop.bbroot.com`。
+- 新增 `CORS_ALLOWED_ORIGINS` 环境变量覆盖，便于不改已有 `config.yaml` 即可更新生产允许来源。
+- HTTPS证书需要同时覆盖 `api.jdshop.bbroot.com` 和 `www.jdshop.bbroot.com`。
+
+## 2026-07-23 新用户注册默认策略
+
+- 新增单例配置表 `registration_defaults`，持久化新用户默认赠送天数和竞品监控、商家后台、分析中心三个板块开关。
+- 新增主管理员接口 `GET/PUT /api/v1/admin/registration-defaults`；赠送天数允许 1-3650 天。
+- 管理控制台新增“注册默认”页面，可直接读取和保存策略，并显示最近保存时间。
+- 注册成功时复制当时的策略到该账号的 `user_access_control`；后续修改默认策略只影响未来注册，不追溯修改已有账号。
+- 初始策略保持为赠送 30 天、仅开放竞品监控，兼容原有注册行为。
+
+## 2026-07-23 手机号注册、短信验证与传输安全
+
+- 新注册普通账号改为手机号绑定；登录使用手机号加密码。内部 `username` 字段暂留用于主管理员和迁移前旧账号兼容。
+- 新增 `GET /api/v1/auth/captcha` 和 `POST /api/v1/auth/sms/send`；注册和手机号账号改密均先图形验证、再短信验证。
+- 图形验证码升级为5位字母数字混合PNG，服务端栅格化旋转、波形扭曲、干扰曲线和噪点，响应中不再包含可直接提取答案的SVG文本。
+- 接入短信宝 HTTPS 安全接口，平台用户名、API Key、产品ID和正式报备模板只从 `/etc/jdshop/jdshop.env` 读取，仓库不保存真实凭据。
+- 同手机号跨用途60秒1条、北京时间每日6条；同IP每小时20条。连续短信保证验证码不同，短信码5分钟有效且最多试错5次。
+- 新增 `sms_verifications`，验证码仅以带服务端 pepper 的 HMAC-SHA256 保存；新增 `schema_migrations` 避免字段迁移重复执行。
+- Windows客户端拒绝向非localhost的HTTP鉴权地址发送密码或Token；生产Nginx启用HSTS，短信服务拒绝HTTP供应商端点。
+- 自动化测试使用本地假短信供应商和正式格式内容，不向真实手机号发送、不产生短信费用。
+- 敏感鉴权请求使用 RSA-OAEP-256 + AES-256-GCM 应用层加密，信封绑定接口路径、时间戳和一次性 `request_id`；本地客户端和云端均拒绝登录、注册、短信发送、改密接口的普通明文 JSON。
+- `www.jdshop.bbroot.com/admin` 的主管理员登录同样使用加密信封；浏览器Network面板中不应再出现包含 `username/password` 的明文JSON。普通 `Content-Type: application/json` 登录请求返回 `code=10001` 属于预期拒绝。
+- 服务端私钥首次启动自动生成到数据目录 `auth_encryption_private.pem`，仅由服务进程读取；所有客户端升级完成后保持 `auth.require_encrypted_requests=true`。

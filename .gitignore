@@ -22,3 +22,5 @@ Thumbs.db
 
 # Temp
 *.tmp
+auth_encryption_private.pem
+.claude/

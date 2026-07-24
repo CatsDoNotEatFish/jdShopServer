@@ -1,6 +1,8 @@
 # API 接口设计
 
-基础路径：`/api/v1`
+生产基础路径：`https://api.jdshop.bbroot.com/api/v1`
+
+API域名只提供接口，不公开根路径测试台和管理页面。主管理员控制台单独部署在 `https://www.jdshop.bbroot.com/admin`，并跨域调用API域名。
 
 ## 响应格式
 
@@ -39,11 +41,21 @@
 | 10003 | 403 | 无权限 |
 | 10004 | 404 | 资源不存在 |
 | 10005 | 409 | 资源冲突 |
+| 10006 | 429 | 短信发送频率或次数超限 |
 | 10500 | 500 | 服务内部错误 |
+| 10503 | 503 | 短信服务不可用 |
 
 ---
 
 ## 公开接口（无需鉴权）
+
+### GET /api/v1/auth/captcha
+
+返回5分钟有效、校验一次即销毁的图形验证码及 `captcha_id`。
+
+### POST /api/v1/auth/sms/send
+
+提交手机号、用途（`register` / `password_reset`）、`captcha_id` 和图形验证码后发送6位短信验证码。同手机号每分钟1条、北京时间每日6条，同IP每小时20条。
 
 ### POST /api/v1/auth/register
 
@@ -53,16 +65,18 @@
 
 ```json
 {
-  "username": "zhangsan",
+  "phone": "13800138000",
   "password": "Abc12345",
+  "sms_code": "654321",
   "email": "zhangsan@example.com",
   "nickname": "张三"
 }
 ```
 
 参数校验：
-- username：3-32 字符，字母数字下划线
+- phone：中国大陆11位手机号
 - password：6-64 字符
+- sms_code：6位注册短信验证码
 - email：可选，格式校验
 
 成功返回：
@@ -73,13 +87,14 @@
   "message": "注册成功",
   "data": {
     "id": 1,
-    "username": "zhangsan",
+    "username": "13800138000",
+    "phone": "13800138000",
     "nickname": "张三"
   }
 }
 ```
 
-失败情况：用户名已存在（10005）、参数校验失败（10001）
+失败情况：手机号已注册（10005）、短信验证码错误或参数校验失败（10001）
 
 ### POST /api/v1/auth/login
 
@@ -89,7 +104,7 @@
 
 ```json
 {
-  "username": "zhangsan",
+  "phone": "13800138000",
   "password": "Abc12345"
 }
 ```
@@ -106,7 +121,8 @@
     "expires_in": 7200,
     "user": {
       "id": 1,
-      "username": "zhangsan",
+      "username": "13800138000",
+      "phone": "13800138000",
       "nickname": "张三",
       "roles": ["user"]
     }
@@ -118,7 +134,7 @@
 - refresh_token 有效期 30 天
 - expires_in 单位为秒
 
-失败情况：用户名或密码错误（10001）、账号已禁用（10003）、连续失败 5 次临时锁定 15 分钟（10003）
+失败情况：手机号或密码错误（10001）、账号已禁用（10003）、连续失败 5 次临时锁定 15 分钟（10003）
 
 ### POST /api/v1/auth/refresh
 
@@ -294,14 +310,14 @@ Authorization: Bearer <access_token>
 
 ```json
 {
-  "old_password": "Abc12345",
-  "new_password": "NewPass678"
+  "new_password": "NewPass678",
+  "sms_code": "654321"
 }
 ```
 
 成功返回 `{"code": 0, "message": "密码修改成功"}`。
 
-修改后旧 Refresh Token 全部吊销，需重新登录。
+已绑定手机号的账号必须先通过图形验证码发送 `password_reset` 短信，再提交短信验证码。修改后旧 Refresh Token 全部吊销且旧 Access Token 永久失效，需重新登录。尚未绑定手机号的迁移前旧账号暂时使用旧密码校验。
 
 ### POST /api/v1/heartbeat
 
@@ -386,7 +402,26 @@ JWT 鉴权的 SSE 长连接，按用户 ID 订阅控制事件。管理员更新�
 
 #### PUT /api/v1/admin/users/:id/access
 
-设置账号到期时间和三个产品板块开关。新注册账号默认只开放竞品监控。
+设置指定账号到期时间和三个产品板块开关。
+
+### 新用户注册默认策略
+
+#### GET /api/v1/admin/registration-defaults
+
+读取新账号注册时采用的默认赠送天数和三个产品板块开关。
+
+#### PUT /api/v1/admin/registration-defaults
+
+更新注册默认策略。`usage_days` 必须是 1-3650 的整数；更新只影响之后注册的账号，不修改已有账号。
+
+```json
+{
+  "usage_days": 30,
+  "competitor_monitor": true,
+  "merchant_backend": false,
+  "analysis_center": false
+}
+```
 
 ### 角色管理
 

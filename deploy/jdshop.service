@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=jdshop
 Group=jdshop
+UMask=0077
 WorkingDirectory=/opt/jdshop
 
 # 内存硬限制: 200MB (1C1G 下留足余量)

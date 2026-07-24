@@ -15,16 +15,18 @@ func NewAccessRepo(db *sql.DB) *AccessRepo {
 	return &AccessRepo{db: db}
 }
 
-func (r *AccessRepo) CreateDefault(userID int64, usageDays int) error {
-	if usageDays <= 0 {
-		usageDays = 30
-	}
-	expiresAt := time.Now().UTC().AddDate(0, 0, usageDays).Format(time.RFC3339)
+func (r *AccessRepo) CreateDefault(userID int64, defaults model.RegistrationDefaults) error {
+	expiresAt := time.Now().UTC().AddDate(0, 0, defaults.UsageDays).Format(time.RFC3339)
 	_, err := r.db.Exec(
 		`INSERT OR IGNORE INTO user_access_control (
 		 user_id, competitor_monitor, merchant_backend, analysis_center, expires_at, updated_at
-		) VALUES (?, 1, 0, 0, ?, ?)`,
-		userID, expiresAt, time.Now().UTC().Format(time.RFC3339),
+		) VALUES (?, ?, ?, ?, ?, ?)`,
+		userID,
+		boolInt(defaults.CompetitorMonitor),
+		boolInt(defaults.MerchantBackend),
+		boolInt(defaults.AnalysisCenter),
+		expiresAt,
+		time.Now().UTC().Format(time.RFC3339),
 	)
 	return err
 }

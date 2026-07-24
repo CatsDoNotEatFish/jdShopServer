@@ -24,6 +24,8 @@ var (
 	ErrTokenRevoked       = errors.New("token revoked")
 	ErrTokenExpired       = errors.New("token expired")
 	ErrUsernameTaken      = errors.New("username taken")
+	ErrPhoneTaken         = errors.New("phone taken")
+	ErrPhoneRequired      = errors.New("phone required for registration")
 )
 
 type AuthService struct {
@@ -32,21 +34,46 @@ type AuthService struct {
 	loginLogRepo *repository.LoginLogRepo
 	cfg          config.AuthConfig
 	accessSvc    *AccessService
+	smsSvc       *SMSService
 }
 
 func NewAuthService(userRepo *repository.UserRepo, tokenRepo *repository.TokenRepo,
-	loginLogRepo *repository.LoginLogRepo, accessSvc *AccessService, cfg config.AuthConfig) *AuthService {
+	loginLogRepo *repository.LoginLogRepo, accessSvc *AccessService, smsSvc *SMSService, cfg config.AuthConfig) *AuthService {
 	return &AuthService{
 		userRepo:     userRepo,
 		tokenRepo:    tokenRepo,
 		loginLogRepo: loginLogRepo,
 		accessSvc:    accessSvc,
+		smsSvc:       smsSvc,
 		cfg:          cfg,
 	}
 }
 
 func (s *AuthService) Register(req model.RegisterRequest) (*model.User, error) {
-	existing, err := s.userRepo.FindByUsername(req.Username)
+	if req.Phone == "" && !s.cfg.AllowLegacyRegistration {
+		return nil, ErrPhoneRequired
+	}
+	identifier := req.Username
+	var phone *string
+	if req.Phone != "" {
+		normalized, err := NormalizePhone(req.Phone)
+		if err != nil {
+			return nil, ErrInvalidPhone
+		}
+		identifier = normalized
+		phone = &normalized
+		existing, err := s.userRepo.FindByPhone(normalized)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			return nil, ErrPhoneTaken
+		}
+		if err := s.smsSvc.VerifyCode(normalized, SMSPurposeRegister, req.SMSCode); err != nil {
+			return nil, err
+		}
+	}
+	existing, err := s.userRepo.FindByUsername(identifier)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +87,8 @@ func (s *AuthService) Register(req model.RegisterRequest) (*model.User, error) {
 	}
 
 	user := &model.User{
-		Username:     req.Username,
+		Username:     identifier,
+		Phone:        phone,
 		PasswordHash: string(hash),
 		Status:       1,
 	}
@@ -80,7 +108,7 @@ func (s *AuthService) Register(req model.RegisterRequest) (*model.User, error) {
 	if err := s.userRepo.AssignRoles(user.ID, []int64{2}); err != nil {
 		return nil, err
 	}
-	if err := s.accessSvc.CreateDefault(user.ID, s.cfg.DefaultUsageDays); err != nil {
+	if err := s.accessSvc.CreateDefault(user.ID); err != nil {
 		return nil, err
 	}
 
@@ -88,32 +116,42 @@ func (s *AuthService) Register(req model.RegisterRequest) (*model.User, error) {
 }
 
 func (s *AuthService) Login(req model.LoginRequest, ip, userAgent string) (*model.LoginResponse, error) {
+	identifier := req.Username
+	var user *model.User
+	var err error
+	if req.Phone != "" {
+		identifier, err = NormalizePhone(req.Phone)
+		if err != nil {
+			return nil, ErrInvalidPhone
+		}
+		user, err = s.userRepo.FindByPhone(identifier)
+	} else {
+		user, err = s.userRepo.FindByUsername(identifier)
+	}
+	if err != nil {
+		return nil, err
+	}
 	// Check rate limit
-	failures, err := s.loginLogRepo.CountFailures(req.Username, ip, s.cfg.LoginLockMinutes)
+	failures, err := s.loginLogRepo.CountFailures(identifier, ip, s.cfg.LoginLockMinutes)
 	if err != nil {
 		return nil, err
 	}
 	if failures >= s.cfg.LoginMaxAttempts {
-		s.logLogin(nil, req.Username, ip, userAgent, "locked", "too many attempts")
+		s.logLogin(nil, identifier, ip, userAgent, "locked", "too many attempts")
 		return nil, ErrTooManyAttempts
 	}
-
-	user, err := s.userRepo.FindByUsername(req.Username)
-	if err != nil {
-		return nil, err
-	}
 	if user == nil {
-		s.logLogin(nil, req.Username, ip, userAgent, "failed", "user not found")
+		s.logLogin(nil, identifier, ip, userAgent, "failed", "user not found")
 		return nil, ErrInvalidCredentials
 	}
 
 	if user.Status != 1 {
-		s.logLogin(&user.ID, req.Username, ip, userAgent, "failed", "account disabled")
+		s.logLogin(&user.ID, identifier, ip, userAgent, "failed", "account disabled")
 		return nil, ErrAccountDisabled
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		s.logLogin(&user.ID, req.Username, ip, userAgent, "failed", "wrong password")
+		s.logLogin(&user.ID, identifier, ip, userAgent, "failed", "wrong password")
 		return nil, ErrInvalidCredentials
 	}
 
@@ -122,7 +160,7 @@ func (s *AuthService) Login(req model.LoginRequest, ip, userAgent string) (*mode
 		return nil, err
 	}
 	if !access.Allowed && access.Reason == "expired" {
-		s.logLogin(&user.ID, req.Username, ip, userAgent, "failed", "account expired")
+		s.logLogin(&user.ID, identifier, ip, userAgent, "failed", "account expired")
 		return nil, ErrAccountExpired
 	}
 
@@ -153,6 +191,7 @@ func (s *AuthService) Login(req model.LoginRequest, ip, userAgent string) (*mode
 		User: model.UserInfo{
 			ID:       user.ID,
 			Username: user.Username,
+			Phone:    user.Phone,
 			Nickname: nickname,
 			Roles:    roles,
 			Status:   user.Status,
