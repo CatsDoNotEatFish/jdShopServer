@@ -158,13 +158,52 @@ version:delete     # 删除版本
 | title | TEXT NOT NULL | 公告标题 |
 | content | TEXT NOT NULL | 公告内容 |
 | level | TEXT NOT NULL DEFAULT 'info' | info, warning, critical |
+| display_mode | TEXT NOT NULL DEFAULT 'center' | center=公告中心、banner=顶部横幅、modal=弹窗 |
+| show_policy | TEXT NOT NULL DEFAULT 'once' | once=提醒一次、every_start=每次启动、require_ack=必须确认 |
+| starts_at | TEXT | 生效时间，空值表示发布后立即生效 |
+| ends_at | TEXT | 失效时间，空值表示长期有效 |
+| target_type | TEXT NOT NULL DEFAULT 'all' | all=全部账号、users=指定账号 |
+| target_platform | TEXT NOT NULL DEFAULT 'all' | all 或 windows |
+| min_version_code | INTEGER | 最低客户端版本码，空值不限 |
+| max_version_code | INTEGER | 最高客户端版本码，空值不限 |
+| action_text | TEXT | 可选操作按钮文字 |
+| action_url | TEXT | 可选 HTTPS 操作链接 |
+| revision | INTEGER NOT NULL DEFAULT 0 | 当前发布修订号 |
 | is_published | INTEGER NOT NULL DEFAULT 0 | 0=草稿, 1=已发布 |
 | published_at | TEXT | 发布时间 |
 | created_by | INTEGER NOT NULL REFERENCES users(id) | 创建人 |
 | created_at | TEXT NOT NULL DEFAULT (datetime('now')) | |
 | updated_at | TEXT NOT NULL DEFAULT (datetime('now')) | |
 
-索引：`idx_announcements_published(is_published, published_at DESC)`
+首次发布的 `revision=1`；重新发布或修改已发布公告后递增，用于让目标用户重新收到未读提醒。
+
+索引：`idx_announcements_published(is_published, published_at DESC)`、`idx_announcements_delivery(is_published, starts_at, ends_at, target_platform)`
+
+### announcement_targets
+
+指定账号公告的投放目标表。仅当 `announcements.target_type='users'` 时存在记录。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| announcement_id | INTEGER NOT NULL REFERENCES announcements(id) ON DELETE CASCADE | 公告ID |
+| user_id | INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE | 目标账号ID |
+
+主键：`PRIMARY KEY (announcement_id, user_id)`。
+
+### announcement_receipts
+
+公告送达、已读和确认回执。回执按公告修订号隔离。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| announcement_id | INTEGER NOT NULL REFERENCES announcements(id) ON DELETE CASCADE | 公告ID |
+| user_id | INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE | 用户ID |
+| revision | INTEGER NOT NULL | 公告修订号 |
+| delivered_at | TEXT | 客户端首次拉取时间 |
+| read_at | TEXT | 用户查看或关闭提醒时间 |
+| acknowledged_at | TEXT | 用户明确点击确认时间 |
+
+主键：`PRIMARY KEY (announcement_id, user_id, revision)`。
 
 ### app_versions
 

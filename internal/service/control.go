@@ -51,7 +51,13 @@ func (h *ControlHub) Publish(userID int64, eventType string) {
 		Type:     eventType,
 		IssuedAt: time.Now().UTC().Format(time.RFC3339),
 	}
+	h.PublishEvent(userID, event)
+}
 
+func (h *ControlHub) PublishEvent(userID int64, event model.ControlEvent) {
+	if event.IssuedAt == "" {
+		event.IssuedAt = time.Now().UTC().Format(time.RFC3339)
+	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for _, channel := range h.subscribers[userID] {
@@ -60,6 +66,22 @@ func (h *ControlHub) Publish(userID int64, eventType string) {
 		default:
 			// A notification only tells the client to fetch the authoritative
 			// access state. Keeping one pending signal is sufficient.
+		}
+	}
+}
+
+func (h *ControlHub) Broadcast(event model.ControlEvent) {
+	if event.IssuedAt == "" {
+		event.IssuedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, subscribers := range h.subscribers {
+		for _, channel := range subscribers {
+			select {
+			case channel <- event:
+			default:
+			}
 		}
 	}
 }

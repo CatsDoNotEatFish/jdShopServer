@@ -65,6 +65,27 @@ func TestProductionNginxSeparatesAPIAndAdminDomains(t *testing.T) {
 		!strings.Contains(apiSection, "location / {\n        return 404;") {
 		t.Fatal("API domain must return 404 outside /api/*")
 	}
+	for _, marker := range []string{
+		"map $request_method $api_limit_key",
+		"OPTIONS     \"\"",
+		"zone=admin_api_limit:10m rate=300r/m",
+		"zone=api_limit:10m rate=120r/m",
+		"zone=login_limit:10m rate=5r/m",
+		"location ^~ /api/v1/admin/",
+		"limit_req zone=admin_api_limit burst=100 nodelay",
+		"limit_req zone=api_limit burst=40 nodelay",
+		"limit_req_status 429",
+		"location @api_rate_limited",
+		`Access-Control-Allow-Origin "https://www.jdshop.bbroot.com" always`,
+	} {
+		if !strings.Contains(apiSection, marker) {
+			t.Fatalf("API rate-limit config is missing %q", marker)
+		}
+	}
+	if strings.Contains(apiSection, "zone=api_limit:10m rate=30r/m") ||
+		strings.Contains(apiSection, "limit_req_zone $binary_remote_addr zone=login_limit") {
+		t.Fatal("production API rate limit must not use the obsolete 30 requests/minute value")
+	}
 	if !strings.Contains(adminSection, "server_name www.yourdomain.com;") ||
 		!strings.Contains(adminSection, "alias /opt/jdshop/static/admin.html;") ||
 		strings.Contains(adminSection, "proxy_pass") {
@@ -87,6 +108,19 @@ func TestProductionNginxSeparatesAPIAndAdminDomains(t *testing.T) {
 	}
 	if strings.Contains(adminHTML, `body:JSON.stringify({username:u,password:p})`) {
 		t.Fatal("admin console must not send the administrator password as plaintext JSON")
+	}
+	for _, marker := range []string{
+		`id="ann-display"`,
+		`id="ann-policy"`,
+		`id="ann-target-users"`,
+		`id="ann-starts"`,
+		`id="ann-ends"`,
+		"delivered_count",
+		"acknowledged_count",
+	} {
+		if !strings.Contains(adminHTML, marker) {
+			t.Fatalf("admin console is missing announcement delivery control %q", marker)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, "static", "index.html")); !os.IsNotExist(err) {
 		t.Fatal("the interactive API test page must not be shipped")

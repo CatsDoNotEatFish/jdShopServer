@@ -27,15 +27,16 @@
 - `main.go`: 入口 (serve / migrate / version 三个子命令)
 
 ### 数据库
-- 15 张核心/迁移表: users, refresh_tokens, user_auth_versions, user_access_control, registration_defaults,
-  sms_verifications, schema_migrations, roles, permissions, role_permissions, user_roles, announcements, app_versions, heartbeat_logs, login_logs
+- 17 张核心/迁移表: users, refresh_tokens, user_auth_versions, user_access_control, registration_defaults,
+  sms_verifications, schema_migrations, roles, permissions, role_permissions, user_roles, announcements, announcement_targets,
+  announcement_receipts, app_versions, heartbeat_logs, login_logs
 - 预置 admin 管理员 (admin/admin123) 和 user 普通用户角色
 - 16 个预置权限码
 - SQLite WAL 模式 + 必要索引 + 外键约束
 
-### 初始化时 API 接口 (28 个端点，后续授权/SSE接口见下方变更记录)
+### API 接口
 - 公开 6 个: health, register, login, refresh, announcements, version/latest
-- 鉴权 4 个: profile GET/PUT, password, heartbeat
+- 鉴权接口包含 profile GET/PUT、password、heartbeat、control/stream、用户公告列表和公告回执
 - 管理 18 个: users CRUD, roles CRUD, permissions list, announcements CRUD+publish/unpublish, versions CRUD
 
 ### 安全特性
@@ -145,3 +146,11 @@
 - 敏感鉴权请求使用 RSA-OAEP-256 + AES-256-GCM 应用层加密，信封绑定接口路径、时间戳和一次性 `request_id`；本地客户端和云端均拒绝登录、注册、短信发送、改密接口的普通明文 JSON。
 - `www.jdshop.bbroot.com/admin` 的主管理员登录同样使用加密信封；浏览器Network面板中不应再出现包含 `username/password` 的明文JSON。普通 `Content-Type: application/json` 登录请求返回 `code=10001` 属于预期拒绝。
 - 服务端私钥首次启动自动生成到数据目录 `auth_encryption_private.pem`，仅由服务进程读取；所有客户端升级完成后保持 `auth.require_encrypted_requests=true`。
+
+## 2026-07-24 公告投放与管理台限流修复
+
+- 公告扩展为公告中心、横幅和弹窗三种展示方式，支持仅一次、每次启动、必须确认三种策略。
+- 支持全部账号或指定账号投放，并按平台、客户端版本和生效时间过滤；新增送达、已读、确认回执及修订号。
+- 公告发布或更新后通过SSE通知在线客户端，客户端每分钟轮询兜底；详细链路见 [公告投放与回执](announcement-delivery.md)。
+- 修复生产Nginx全局 `30r/m + burst=10` 误伤管理台的问题：管理接口改为 `300r/m + burst=100`，普通API保持 `120r/m + burst=40`，跨域 `OPTIONS` 均不计数。
+- 限流响应统一为带管理台CORS头的HTTP 429 JSON，后台网络异常提示不再直接暴露浏览器的 `Failed to fetch`。

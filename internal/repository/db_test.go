@@ -45,8 +45,8 @@ func TestRunMigrationsUpgradesLegacyDatabaseAndIsIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&applied); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if applied != 5 {
-		t.Fatalf("applied migration count=%d, want 5", applied)
+	if applied != 6 {
+		t.Fatalf("applied migration count=%d, want 6", applied)
 	}
 }
 
@@ -76,8 +76,8 @@ func TestRunMigrationsRecognizesFullyAppliedUntrackedPhoneMigration(t *testing.T
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&applied); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if applied != 5 {
-		t.Fatalf("applied migration count=%d, want 5", applied)
+	if applied != 6 {
+		t.Fatalf("applied migration count=%d, want 6", applied)
 	}
 }
 

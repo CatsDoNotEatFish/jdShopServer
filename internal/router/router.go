@@ -42,10 +42,10 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 	}
 	authSvc := service.NewAuthService(userRepo, tokenRepo, loginLogRepo, accessSvc, smsSvc, cfg.Auth)
 	userSvc := service.NewUserService(userRepo, tokenRepo, accessSvc, smsSvc, cfg.Auth)
-	announcementSvc := service.NewAnnouncementService(announcementRepo)
+	controlHub := service.NewControlHub()
+	announcementSvc := service.NewAnnouncementService(announcementRepo, controlHub)
 	versionSvc := service.NewVersionService(versionRepo)
 	heartbeatSvc := service.NewHeartbeatService(heartbeatRepo, versionRepo, userRepo, accessSvc)
-	controlHub := service.NewControlHub()
 	adminSvc := service.NewAdminService(userRepo, roleRepo, accessSvc, tokenRepo, controlHub, cfg.Auth.SuperAdminUsername)
 
 	// Handlers
@@ -106,6 +106,9 @@ func New(cfg *config.Config, db *sql.DB, version string) chi.Router {
 		r.Put("/api/v1/user/password", userH.ChangePassword)
 		r.Post("/api/v1/heartbeat", heartbeatH.Report)
 		r.Get("/api/v1/control/stream", controlH.Stream)
+		r.Get("/api/v1/user/announcements", announcementH.UserList)
+		r.Post("/api/v1/user/announcements/{id}/read", announcementH.MarkRead)
+		r.Post("/api/v1/user/announcements/{id}/acknowledge", announcementH.Acknowledge)
 	})
 
 	// Admin routes

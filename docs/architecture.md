@@ -15,7 +15,8 @@ Go API ──> SQLite文件（WAL模式，data/app.db）
 ### Nginx
 
 - HTTPS 终止（Let's Encrypt/Certbot 或 ZeroSSL/acme.sh 自动续期；当前生产使用 ZeroSSL）
-- `limit_req` 对 API 限流（30 req/min），登录接口额外限制（5 req/min）
+- `limit_req` 分层限流：管理接口300 req/min（突发100），普通API 120 req/min（突发40），登录接口5 req/min（突发3）；跨域 `OPTIONS` 预检均不计数
+- Nginx限流统一返回带管理台CORS头的HTTP 429 JSON，避免浏览器把正常限流误报成 `Failed to fetch`
 - gzip 压缩 JSON 响应，降低带宽
 - API域名只把 `/api/*` 反向代理到Go，根路径和 `/admin` 固定404
 - 管理台域名只静态提供 `/admin`，不代理任何 `/api/*`
@@ -53,7 +54,7 @@ Go API ──> SQLite文件（WAL模式，data/app.db）
 │  Service (internal/service/)            │  ← 业务逻辑
 │  - auth.go      注册/登录/Token刷新     │
 │  - user.go      个人资料/密码修改       │
-│  - announcement.go  公告业务            │
+│  - announcement.go  公告投放/回执/实时通知 │
 │  - version.go   版本管理/更新检查       │
 │  - heartbeat.go 心跳+版本提醒           │
 │  - control.go   按用户分发控制通知       │
@@ -65,7 +66,7 @@ Go API ──> SQLite文件（WAL模式，data/app.db）
 │  - user.go      用户 CRUD + 角色查询    │
 │  - role.go      角色 CRUD + 权限        │
 │  - token.go     Refresh Token 管理      │
-│  - announcement.go  公告 CRUD           │
+│  - announcement.go  公告 CRUD/目标/回执 │
 │  - version.go   版本 CRUD + 最新查询    │
 │  - heartbeat.go  心跳写入               │
 │  - login_log.go  登录日志+失败计数      │
@@ -136,7 +137,8 @@ jdShopServer/
 │   ├── 002_user_access_control.sql # 使用期和三个客户端板块
 │   ├── 003_user_auth_versions.sql  # Access Token永久失效版本
 │   ├── 004_registration_defaults.sql # 新用户注册默认策略
-│   └── 005_phone_sms_auth.sql      # 手机号与短信验证
+│   ├── 005_phone_sms_auth.sql      # 手机号与短信验证
+│   └── 006_announcement_delivery.sql # 公告投放规则、目标账号与回执
 ├── deploy/
 │   ├── nginx.conf              # 证书签发前HTTP引导配置
 │   ├── nginx-https.conf        # ZeroSSL/acme.sh生产HTTPS配置

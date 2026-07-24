@@ -326,6 +326,16 @@ nginx -t
 systemctl reload nginx
 ```
 
+生产模板将主管理员接口设置为每IP每分钟300次、突发100次；普通客户端API保持每分钟120次、突发40次；登录接口独立限制为每分钟5次、突发3次。跨域 `OPTIONS` 预检使用空限流键，不消耗任何限流额度。不要恢复旧的全局 `30r/m + burst=10`：管理台一次菜单切换会同时发出预检和多个数据请求，旧配置会把正常操作拒绝为503。新模板在超限时返回带管理台CORS头的429 JSON和 `Retry-After: 2`。
+
+更新模板后必须先测试再加载：
+
+```bash
+nginx -t
+systemctl reload nginx
+nginx -T | grep -E 'api_limit|limit_req_status|api_rate_limited'
+```
+
 acme.sh安装证书后会创建自动续期任务。检查：
 
 ```bash

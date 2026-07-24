@@ -274,6 +274,24 @@ curl -o /dev/null -sS -w '%{http_code}\n' https://www.jdshop.bbroot.com/api/v1/h
 crontab -l
 ```
 
+### 8.1 管理台切换菜单后出现 `Failed to fetch`
+
+先检查 `/var/log/nginx/jdshop-api-error.log` 是否出现 `limiting requests ... by zone "api_limit"`。旧生产模板使用 `30r/m + burst=10`，而管理台跨域请求的 `OPTIONS` 预检也被计数，快速切换菜单会被Nginx拒绝为503；拒绝发生在Go CORS中间件之前，因此浏览器只显示 `Failed to fetch`。
+
+当前模板改为管理接口 `300r/m + burst=100`、普通API `120r/m + burst=40`、登录接口 `5r/m + burst=3`，所有 `OPTIONS` 均不计数，超限返回带管理台CORS头的429 JSON。同步模板时执行：
+
+```bash
+install -o root -g root -m 0644 \
+  /opt/jdshop/deploy/nginx-https.conf \
+  /etc/nginx/sites-available/jdshop
+sed -i 's/api\.yourdomain\.com/api.jdshop.bbroot.com/g' /etc/nginx/sites-available/jdshop
+sed -i 's/www\.yourdomain\.com/www.jdshop.bbroot.com/g' /etc/nginx/sites-available/jdshop
+nginx -t
+systemctl reload nginx
+```
+
+验证日志不再持续出现正常后台操作触发的限流；不要通过关闭登录限流解决该问题。
+
 HTTP检查必须使用GET。`curl -I`是HEAD，而健康接口只允许GET，因此可能返回405；这与HTTP跳转或HTTPS证书是否有效不是同一问题。
 
 ## 9. 首次上线后的安全动作

@@ -231,7 +231,7 @@ tr:last-child td{border-bottom:none}
           </select>
         </div>
         <div style="overflow-x:auto"><table>
-          <thead><tr><th>ID</th><th>标题</th><th>级别</th><th>状态</th><th>发布时间</th><th style="width:240px">操作</th></tr></thead>
+          <thead><tr><th>ID</th><th>标题</th><th>级别/展示</th><th>投放范围</th><th>状态/时间</th><th>送达/已读/确认</th><th style="width:240px">操作</th></tr></thead>
           <tbody id="ann-tbody"></tbody>
         </table></div>
         <div class="pagination" id="ann-pager"></div>
@@ -302,12 +302,37 @@ tr:last-child td{border-bottom:none}
 
 <!-- Modals -->
 <div class="modal-overlay" id="modal-ann" style="display:none" onclick="if(event.target===this)closeModal('modal-ann')">
-  <div class="modal">
+  <div class="modal" style="max-width:760px">
     <h3 id="ann-modal-title">新建公告</h3>
     <input type="hidden" id="ann-id">
     <label>标题</label><input id="ann-title" placeholder="公告标题">
-    <label>级别</label><select id="ann-level-input"><option value="info">info</option><option value="warning">warning</option><option value="critical">critical</option></select>
     <label>内容</label><textarea id="ann-content" placeholder="公告内容" rows="5"></textarea>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+      <div><label>级别</label><select id="ann-level-input"><option value="info">普通</option><option value="warning">重要</option><option value="critical">紧急</option></select></div>
+      <div><label>展示方式</label><select id="ann-display"><option value="center">公告中心</option><option value="banner">顶部横幅</option><option value="modal">弹窗</option></select></div>
+      <div><label>提醒策略</label><select id="ann-policy"><option value="once">只提醒一次</option><option value="every_start">每次启动提醒</option><option value="require_ack">必须确认</option></select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label>生效时间（留空立即）</label><input id="ann-starts" type="datetime-local"></div>
+      <div><label>失效时间（留空长期）</label><input id="ann-ends" type="datetime-local"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label>投放范围</label><select id="ann-target-type" onchange="toggleAnnTargets()"><option value="all">全部账号</option><option value="users">指定账号</option></select></div>
+      <div><label>目标平台</label><select id="ann-platform"><option value="all">全部平台</option><option value="windows">Windows</option></select></div>
+    </div>
+    <div id="ann-target-users-wrap" style="display:none">
+      <label>指定账号（可多选）</label>
+      <select id="ann-target-users" multiple size="6"></select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label>最低客户端版本码（留空不限）</label><input id="ann-min-version" type="number" min="0"></div>
+      <div><label>最高客户端版本码（留空不限）</label><input id="ann-max-version" type="number" min="0"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px">
+      <div><label>操作按钮文字</label><input id="ann-action-text" placeholder="例如：查看详情"></div>
+      <div><label>操作链接（HTTPS）</label><input id="ann-action-url" placeholder="https://..."></div>
+    </div>
+    <p style="font-size:11px;color:var(--txt2);margin-top:12px">发布或修改已发布公告后，在线客户端会实时收到通知；离线客户端在下次登录时获取。公告不会暂停采集任务。</p>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal('modal-ann')">取消</button>
       <button class="btn btn-primary" onclick="saveAnnouncement()">保存</button>
@@ -484,7 +509,8 @@ function toast(msg,ok){var t=document.getElementById('toast');t.textContent=msg;
 async function api(path,opts){
   var o=opts||{};o.headers=o.headers||{};o.headers['Content-Type']='application/json';o.cache='no-store';
   if(TOKEN)o.headers['Authorization']='Bearer '+TOKEN;
-  return fetch(B+path,o)
+  try{return await fetch(B+path,o)}
+  catch(e){throw new Error('无法连接服务器，请检查网络后稍后重试')}
 }
 function getQP(page,ps){ps=ps||20;return'?page='+page+'&page_size='+ps}
 
@@ -632,14 +658,22 @@ async function loadAnnouncements(page){if(page)annPage=page;
   if(filter==='draft')items=items.filter(function(a){return a.is_published===0});
   if(level)items=items.filter(function(a){return a.level===level});
   var h='';items.forEach(function(a){
-    h+='<tr><td>'+a.id+'</td><td>'+esc(a.title)+'</td><td><span class="badge '+(a.level==='critical'?'badge-red':a.level==='warning'?'badge-yellow':'badge-blue')+'">'+a.level+'</span></td>'
-    +'<td>'+(a.is_published?'<span class="badge badge-green">已发布</span>':'<span class="badge badge-gray">草稿</span>')+'</td>'
-    +'<td style="font-size:11px;color:var(--txt2)">'+formatDate(a.published_at)+'</td>'
+    var levelLabel=a.level==='critical'?'紧急':a.level==='warning'?'重要':'普通';
+    var displayLabel={center:'公告中心',banner:'顶部横幅',modal:'弹窗'}[a.display_mode]||a.display_mode;
+    var policyLabel={once:'一次',every_start:'每次启动',require_ack:'必须确认'}[a.show_policy]||a.show_policy;
+    var targetLabel=a.target_type==='users'?'指定 '+(a.target_user_ids||[]).length+' 个账号':'全部账号';
+    var timing=a.starts_at?'生效 '+formatDate(a.starts_at):'立即生效';
+    if(a.ends_at)timing+='<br>失效 '+formatDate(a.ends_at);
+    h+='<tr><td>'+a.id+'</td><td><strong>'+esc(a.title)+'</strong><br><small style="color:var(--txt2)">版本 '+a.revision+'</small></td>'
+    +'<td><span class="badge '+(a.level==='critical'?'badge-red':a.level==='warning'?'badge-yellow':'badge-blue')+'">'+levelLabel+'</span><br><small style="color:var(--txt2)">'+displayLabel+' · '+policyLabel+'</small></td>'
+    +'<td>'+targetLabel+'<br><small style="color:var(--txt2)">'+(a.target_platform==='windows'?'Windows':'全部平台')+'</small></td>'
+    +'<td>'+(a.is_published?'<span class="badge badge-green">已发布</span>':'<span class="badge badge-gray">草稿</span>')+'<br><small style="color:var(--txt2)">'+timing+'</small></td>'
+    +'<td>'+Number(a.delivered_count||0)+' / '+Number(a.read_count||0)+' / '+Number(a.acknowledged_count||0)+'</td>'
     +'<td><button class="btn btn-outline btn-sm" onclick="editAnnouncement('+a.id+')">编辑</button> '
     +(a.is_published?'<button class="btn btn-outline btn-sm" onclick="annAction('+a.id+',\'unpublish\')">下架</button>':'<button class="btn btn-primary btn-sm" onclick="annAction('+a.id+',\'publish\')">发布</button>')
     +' <button class="btn btn-danger btn-sm" onclick="annAction('+a.id+',\'delete\')">删除</button></td></tr>';
   });
-  document.getElementById('ann-tbody').innerHTML=h||'<tr><td colspan="6" style="color:var(--txt2);text-align:center;padding:24px">暂无公告</td></tr>';
+  document.getElementById('ann-tbody').innerHTML=h||'<tr><td colspan="7" style="color:var(--txt2);text-align:center;padding:24px">暂无公告</td></tr>';
   renderPager('ann-pager',annPage,total,15,loadAnnouncements)
   }catch(e){}
 }
@@ -653,17 +687,50 @@ async function annAction(id,action){
     var d=await r.json();toast(d.message||'操作成功',d.code===0);loadAnnouncements()
   }catch(e){toast('网络错误',false)}
 }
-function showAnnModal(){document.getElementById('ann-id').value='';document.getElementById('ann-title').value='';document.getElementById('ann-content').value='';document.getElementById('ann-level-input').value='info';document.getElementById('ann-modal-title').textContent='新建公告';document.getElementById('modal-ann').style.display='flex'}
+function annLocalTime(value){
+  if(!value)return '';
+  var date=new Date(value);if(isNaN(date.getTime()))return '';
+  var local=new Date(date.getTime()-date.getTimezoneOffset()*60000);
+  return local.toISOString().slice(0,16)
+}
+function annISOTime(value){return value?new Date(value).toISOString():''}
+function toggleAnnTargets(){document.getElementById('ann-target-users-wrap').style.display=document.getElementById('ann-target-type').value==='users'?'block':'none'}
+async function loadAnnUsers(selected){
+  selected=selected||[];
+  try{var r=await api('/api/v1/admin/users?page=1&page_size=100');var d=await r.json();var items=d.data?d.data.items||[]:[];
+  document.getElementById('ann-target-users').innerHTML=items.map(function(u){return '<option value="'+u.id+'" '+(selected.includes(Number(u.id))?'selected':'')+'>'+esc(u.nickname||u.username)+'（'+esc(u.phone||u.username)+'）</option>'}).join('')
+  }catch(e){document.getElementById('ann-target-users').innerHTML=''}
+}
+async function showAnnModal(){
+  document.getElementById('ann-id').value='';document.getElementById('ann-title').value='';document.getElementById('ann-content').value='';
+  document.getElementById('ann-level-input').value='info';document.getElementById('ann-display').value='center';document.getElementById('ann-policy').value='once';
+  document.getElementById('ann-starts').value='';document.getElementById('ann-ends').value='';document.getElementById('ann-target-type').value='all';document.getElementById('ann-platform').value='all';
+  document.getElementById('ann-min-version').value='';document.getElementById('ann-max-version').value='';document.getElementById('ann-action-text').value='';document.getElementById('ann-action-url').value='';
+  document.getElementById('ann-modal-title').textContent='新建公告';toggleAnnTargets();await loadAnnUsers([]);document.getElementById('modal-ann').style.display='flex'
+}
 async function editAnnouncement(id){
   try{var r=await api('/api/v1/admin/announcements?page=1&page_size=200');var d=await r.json();
   var a=(d.data.items||[]).find(function(x){return x.id===id});if(!a)return;
-  document.getElementById('ann-id').value=a.id;document.getElementById('ann-title').value=a.title;document.getElementById('ann-content').value=a.content;document.getElementById('ann-level-input').value=a.level;document.getElementById('ann-modal-title').textContent='编辑公告';document.getElementById('modal-ann').style.display='flex'}catch(e){}
+  document.getElementById('ann-id').value=a.id;document.getElementById('ann-title').value=a.title;document.getElementById('ann-content').value=a.content;document.getElementById('ann-level-input').value=a.level;
+  document.getElementById('ann-display').value=a.display_mode||'center';document.getElementById('ann-policy').value=a.show_policy||'once';document.getElementById('ann-starts').value=annLocalTime(a.starts_at);document.getElementById('ann-ends').value=annLocalTime(a.ends_at);
+  document.getElementById('ann-target-type').value=a.target_type||'all';document.getElementById('ann-platform').value=a.target_platform||'all';document.getElementById('ann-min-version').value=a.min_version_code||'';document.getElementById('ann-max-version').value=a.max_version_code||'';
+  document.getElementById('ann-action-text').value=a.action_text||'';document.getElementById('ann-action-url').value=a.action_url||'';document.getElementById('ann-modal-title').textContent='编辑公告';
+  toggleAnnTargets();await loadAnnUsers((a.target_user_ids||[]).map(Number));document.getElementById('modal-ann').style.display='flex'}catch(e){toast('加载公告失败',false)}
 }
 async function saveAnnouncement(){
   var id=document.getElementById('ann-id').value,title=document.getElementById('ann-title').value.trim(),content=document.getElementById('ann-content').value.trim(),level=document.getElementById('ann-level-input').value;
   if(!title||!content){toast('标题和内容不能为空',false);return}
+  var targetType=document.getElementById('ann-target-type').value;
+  var targetUsers=Array.from(document.getElementById('ann-target-users').selectedOptions).map(function(o){return Number(o.value)});
+  if(targetType==='users'&&!targetUsers.length){toast('请至少选择一个投放账号',false);return}
+  var startValue=document.getElementById('ann-starts').value,endValue=document.getElementById('ann-ends').value;
+  if(startValue&&endValue&&new Date(endValue)<=new Date(startValue)){toast('失效时间必须晚于生效时间',false);return}
+  var body={title:title,content:content,level:level,display_mode:document.getElementById('ann-display').value,show_policy:document.getElementById('ann-policy').value,
+    starts_at:annISOTime(startValue),ends_at:annISOTime(endValue),target_type:targetType,target_platform:document.getElementById('ann-platform').value,target_user_ids:targetUsers,
+    min_version_code:Number(document.getElementById('ann-min-version').value||0),max_version_code:Number(document.getElementById('ann-max-version').value||0),
+    action_text:document.getElementById('ann-action-text').value.trim(),action_url:document.getElementById('ann-action-url').value.trim()};
   var method=id?'PUT':'POST',path=id?'/api/v1/admin/announcements/'+id:'/api/v1/admin/announcements';
-  try{var r=await api(path,{method:method,body:JSON.stringify({title:title,content:content,level:level})});
+  try{var r=await api(path,{method:method,body:JSON.stringify(body)});
   var d=await r.json();toast(d.message||'保存成功',d.code===0);if(d.code===0){closeModal('modal-ann');loadAnnouncements()}}catch(e){toast('网络错误',false)}
 }
 

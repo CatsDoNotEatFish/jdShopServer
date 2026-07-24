@@ -43,7 +43,7 @@ API域名只开放 `/api/*`，访问根路径或 `/admin` 返回404。接口文�
 | 10003 | 403 | 无权限 / 账号禁用 |
 | 10004 | 404 | 资源不存在 |
 | 10005 | 409 | 资源冲突（如手机号已注册） |
-| 10006 | 429 | 短信发送频率或每日次数超限 |
+| 10006 | 429 | API请求频率或短信发送次数超限 |
 | 10500 | 500 | 服务内部错误 |
 | 10503 | 503 | 短信服务未配置或供应商暂不可用 |
 
@@ -57,7 +57,27 @@ Authorization: Bearer <access_token>
 
 Access Token 有效期 2 小时，过期后使用 Refresh Token 换取新 Token。
 
-生产环境只允许通过 `https://api.jdshop.bbroot.com` 传输密码、短信验证码和 Token。客户端会拒绝连接非 localhost 的 HTTP 鉴权地址；Nginx 同时启用 TLS 与 HSTS。浏览器开发者工具能显示本机发送前的 JSON，不代表公网链路是明文，真正的网络数据由 TLS 加密。`http://127.0.0.1` 只用于同机开发测试。
+生产环境只允许通过 `https://api.jdshop.bbroot.com` 传输密码、短信验证码和 Token。客户端会拒绝连接非 localhost 的 HTTP 鉴权地址；Nginx 同时启用 TLS 与 HSTS。`http://127.0.0.1` 只用于同机开发测试。
+
+### 敏感请求应用层加密
+
+`POST /auth/sms/send`、`POST /auth/register`、`POST /auth/login` 和 `PUT /user/password` 在生产配置下必须使用 `application/jdshop-encrypted+json`。客户端先读取 `GET /auth/encryption-key`，再用 RSA-OAEP-256 包装一次性 AES-256-GCM 密钥；信封同时绑定完整接口路径、毫秒时间戳和一次性 `request_id`。直接提交 `application/json` 会返回 `code=10001`。
+
+本页为便于说明而展示的“请求体”均是**加密前逻辑字段**，不能直接照抄为生产 curl 请求。可执行实现以 Windows 客户端 `jd_monitor/license.py` 和管理台 `static/admin.html` 为准。加密信封结构如下：
+
+```json
+{
+  "v": 1,
+  "alg": "RSA-OAEP-256+A256GCM",
+  "kid": "服务端公钥ID",
+  "key": "Base64(RSA加密后AES密钥)",
+  "nonce": "Base64(12字节随机数)",
+  "ciphertext": "Base64(AES-GCM密文及认证标签)",
+  "ts": 1784860000000,
+  "request_id": "一次性随机ID",
+  "path": "/api/v1/auth/login"
+}
+```
 
 ---
 
@@ -146,13 +166,7 @@ curl http://127.0.0.1:8080/api/v1/health
 | email | 否 | 邮箱 |
 | nickname | 否 | 显示昵称 |
 
-**curl 示例:**
-
-```bash
-curl -X POST https://api.jdshop.bbroot.com/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"phone":"13800138000","password":"test123","sms_code":"654321","nickname":"Test User"}'
-```
+生产请求必须按“敏感请求应用层加密”生成信封，不能直接发送上述逻辑字段。
 
 **成功返回 (200):**
 
@@ -197,13 +211,7 @@ curl -X POST https://api.jdshop.bbroot.com/api/v1/auth/register \
 }
 ```
 
-**curl 示例:**
-
-```bash
-curl -X POST https://api.jdshop.bbroot.com/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"phone":"13800138000","password":"test123"}'
-```
+生产请求必须按“敏感请求应用层加密”生成信封，不能直接发送上述逻辑字段。
 
 **成功返回 (200):**
 
@@ -391,14 +399,7 @@ curl -X PUT http://127.0.0.1:8080/api/v1/user/profile \
 }
 ```
 
-**curl 示例:**
-
-```bash
-curl -X PUT https://api.jdshop.bbroot.com/api/v1/user/password \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"new_password":"newPassword456","sms_code":"654321"}'
-```
+生产请求必须携带 Access Token，并按“敏感请求应用层加密”生成信封，不能直接发送上述逻辑字段。
 
 **成功返回 (200):**
 
@@ -549,6 +550,29 @@ curl "http://127.0.0.1:8080/api/v1/announcements?page=1&page_size=10"
 }
 ```
 
+公开接口只返回投放范围为“全部账号”且当前时间有效的公告，用于兼容旧客户端。新版客户端登录后使用以下鉴权接口。
+
+### GET /api/v1/user/announcements
+
+需要 JWT。按当前用户、平台、客户端版本和生效时间返回可见公告，并记录送达回执。
+
+查询参数：
+
+| 参数 | 说明 |
+|------|------|
+| platform | 客户端平台，当前使用 windows |
+| version_code | 数字客户端版本码 |
+
+返回 `items`、`total`、`unread_count` 和 `requires_ack_count`。每条公告包含 `revision`、`is_read`、`is_acknowledged` 和展示策略。
+
+### POST /api/v1/user/announcements/:id/read
+
+需要 JWT。把当前公告修订记录为已读。
+
+### POST /api/v1/user/announcements/:id/acknowledge
+
+需要 JWT。把当前公告修订记录为已读且已确认。非目标用户提交时返回公告不存在。
+
 ## 8. 版本检查
 
 ### GET /api/v1/version/latest
@@ -615,14 +639,7 @@ curl "http://127.0.0.1:8080/api/v1/version/latest?platform=windows&current_versi
 
 ## 9. 管理员接口
 
-以下接口仅允许 `SUPER_ADMIN_USERNAME` 指定的唯一主管理员（默认 `admin`）访问，并且该账号必须持有内置 `admin` 角色。普通注册账号即使误获 `admin` 角色也会返回 403。先登录获取主管理员 Token：
-
-```bash
-TOKEN=$(curl -s -X POST http://127.0.0.1:8080/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}' \
-  | grep -o '"access_token":"[^"]*"' | sed 's/"access_token":"//;s/"//')
-```
+以下接口仅允许 `SUPER_ADMIN_USERNAME` 指定的唯一主管理员（默认 `admin`）访问，并且该账号必须持有内置 `admin` 角色。普通注册账号即使误获 `admin` 角色也会返回 403。主管理员应通过管理台的加密登录流程获取 Token；下文 `$TOKEN` 仅表示已经安全取得的 Access Token，不提供会被生产环境拒绝的明文密码 curl 示例。
 
 ### 9.1 用户管理
 
@@ -895,7 +912,18 @@ curl "http://127.0.0.1:8080/api/v1/admin/announcements?page=1&page_size=10" \
 {
   "title": "系统维护通知",
   "content": "服务器将于 7月10日 凌晨 2:00-4:00 进行维护升级，届时服务不可用。",
-  "level": "warning"
+  "level": "warning",
+  "display_mode": "banner",
+  "show_policy": "once",
+  "starts_at": "2026-07-25T02:00:00Z",
+  "ends_at": "2026-07-26T02:00:00Z",
+  "target_type": "all",
+  "target_platform": "windows",
+  "min_version_code": 2026072401,
+  "max_version_code": 0,
+  "target_user_ids": [],
+  "action_text": "查看详情",
+  "action_url": "https://www.jdshop.bbroot.com/notice/maintenance"
 }
 ```
 
@@ -904,6 +932,14 @@ curl "http://127.0.0.1:8080/api/v1/admin/announcements?page=1&page_size=10" \
 | title | 是 | 公告标题 |
 | content | 是 | 公告内容 |
 | level | 否 | info / warning / critical，默认 info |
+| display_mode | 否 | center / banner / modal，默认 center |
+| show_policy | 否 | once / every_start / require_ack，默认 once |
+| starts_at / ends_at | 否 | RFC3339 生效/失效时间 |
+| target_type | 否 | all / users；users 时 target_user_ids 至少一个 |
+| target_platform | 否 | all / windows |
+| min_version_code / max_version_code | 否 | 0或空值表示不限 |
+| action_text / action_url | 否 | 操作按钮和 HTTPS 链接 |
+| target_user_ids | 否 | 指定投放账号ID数组 |
 
 **curl 示例:**
 
@@ -935,7 +971,7 @@ curl -X POST http://127.0.0.1:8080/api/v1/admin/announcements \
 
 #### PUT /api/v1/admin/announcements/:id
 
-编辑公告。所有字段可选，只更新传入的非空字段。
+编辑公告。所有字段可选；管理控制台提交完整配置。修改已发布公告会递增 `revision`、实时通知目标客户端，并使新修订重新进入未读状态。
 
 **请求体:**
 
@@ -967,7 +1003,7 @@ curl -X DELETE http://127.0.0.1:8080/api/v1/admin/announcements/2 \
 
 #### POST /api/v1/admin/announcements/:id/publish
 
-发布公告。设置 `is_published=1` 并记录 `published_at` 时间。
+发布公告。设置 `is_published=1`、记录 `published_at`、递增发布修订号，并通过 SSE 实时通知在线目标客户端。
 
 ```bash
 curl -X POST http://127.0.0.1:8080/api/v1/admin/announcements/2/publish \
@@ -1100,6 +1136,9 @@ curl -X DELETE http://127.0.0.1:8080/api/v1/admin/versions/1 \
 | POST | `/api/v1/heartbeat` | JWT | 心跳上报 |
 | GET | `/api/v1/control/stream` | JWT | 账号控制实时事件流（SSE） |
 | GET | `/api/v1/announcements` | 无 | 公开公告列表 |
+| GET | `/api/v1/user/announcements` | JWT | 按账号、平台、版本获取公告并记录送达 |
+| POST | `/api/v1/user/announcements/:id/read` | JWT | 标记公告修订已读 |
+| POST | `/api/v1/user/announcements/:id/acknowledge` | JWT | 确认公告修订 |
 | GET | `/api/v1/version/latest` | 无 | 检查最新版本 |
 | GET | `/api/v1/admin/users` | admin | 用户列表 |
 | PUT | `/api/v1/admin/users/:id/status` | admin | 启用/禁用用户 |

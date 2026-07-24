@@ -1,8 +1,10 @@
 package model
 
 type ControlEvent struct {
-	Type     string `json:"type"`
-	IssuedAt string `json:"issued_at"`
+	Type           string `json:"type"`
+	IssuedAt       string `json:"issued_at"`
+	AnnouncementID int64  `json:"announcement_id,omitempty"`
+	Revision       int    `json:"revision,omitempty"`
 }
 
 type User struct {
@@ -55,15 +57,35 @@ type Permission struct {
 }
 
 type Announcement struct {
-	ID          int64   `json:"id" db:"id"`
-	Title       string  `json:"title" db:"title"`
-	Content     string  `json:"content" db:"content"`
-	Level       string  `json:"level" db:"level"`
-	IsPublished int     `json:"is_published" db:"is_published"`
-	PublishedAt *string `json:"published_at,omitempty" db:"published_at"`
-	CreatedBy   int64   `json:"created_by" db:"created_by"`
-	CreatedAt   string  `json:"created_at" db:"created_at"`
-	UpdatedAt   string  `json:"updated_at" db:"updated_at"`
+	ID                int64   `json:"id" db:"id"`
+	Title             string  `json:"title" db:"title"`
+	Content           string  `json:"content" db:"content"`
+	Level             string  `json:"level" db:"level"`
+	DisplayMode       string  `json:"display_mode" db:"display_mode"`
+	ShowPolicy        string  `json:"show_policy" db:"show_policy"`
+	StartsAt          *string `json:"starts_at,omitempty" db:"starts_at"`
+	EndsAt            *string `json:"ends_at,omitempty" db:"ends_at"`
+	TargetType        string  `json:"target_type" db:"target_type"`
+	TargetPlatform    string  `json:"target_platform" db:"target_platform"`
+	MinVersionCode    *int64  `json:"min_version_code,omitempty" db:"min_version_code"`
+	MaxVersionCode    *int64  `json:"max_version_code,omitempty" db:"max_version_code"`
+	ActionText        *string `json:"action_text,omitempty" db:"action_text"`
+	ActionURL         *string `json:"action_url,omitempty" db:"action_url"`
+	Revision          int     `json:"revision" db:"revision"`
+	IsPublished       int     `json:"is_published" db:"is_published"`
+	PublishedAt       *string `json:"published_at,omitempty" db:"published_at"`
+	CreatedBy         int64   `json:"created_by" db:"created_by"`
+	CreatedAt         string  `json:"created_at" db:"created_at"`
+	UpdatedAt         string  `json:"updated_at" db:"updated_at"`
+	TargetUserIDs     []int64 `json:"target_user_ids,omitempty" db:"-"`
+	DeliveredCount    int64   `json:"delivered_count,omitempty" db:"-"`
+	ReadCount         int64   `json:"read_count,omitempty" db:"-"`
+	AcknowledgedCount int64   `json:"acknowledged_count,omitempty" db:"-"`
+	IsRead            bool    `json:"is_read" db:"-"`
+	IsAcknowledged    bool    `json:"is_acknowledged" db:"-"`
+	DeliveredAt       *string `json:"delivered_at,omitempty" db:"-"`
+	ReadAt            *string `json:"read_at,omitempty" db:"-"`
+	AcknowledgedAt    *string `json:"acknowledged_at,omitempty" db:"-"`
 }
 
 type AppVersion struct {
@@ -209,15 +231,37 @@ type HeartbeatResponse struct {
 }
 
 type CreateAnnouncementRequest struct {
-	Title   string `json:"title"`
-	Content string `json:"content"`
-	Level   string `json:"level,omitempty"`
+	Title          string  `json:"title"`
+	Content        string  `json:"content"`
+	Level          string  `json:"level,omitempty"`
+	DisplayMode    string  `json:"display_mode,omitempty"`
+	ShowPolicy     string  `json:"show_policy,omitempty"`
+	StartsAt       *string `json:"starts_at,omitempty"`
+	EndsAt         *string `json:"ends_at,omitempty"`
+	TargetType     string  `json:"target_type,omitempty"`
+	TargetPlatform string  `json:"target_platform,omitempty"`
+	MinVersionCode *int64  `json:"min_version_code,omitempty"`
+	MaxVersionCode *int64  `json:"max_version_code,omitempty"`
+	ActionText     *string `json:"action_text,omitempty"`
+	ActionURL      *string `json:"action_url,omitempty"`
+	TargetUserIDs  []int64 `json:"target_user_ids,omitempty"`
 }
 
 type UpdateAnnouncementRequest struct {
-	Title   *string `json:"title,omitempty"`
-	Content *string `json:"content,omitempty"`
-	Level   *string `json:"level,omitempty"`
+	Title          *string `json:"title,omitempty"`
+	Content        *string `json:"content,omitempty"`
+	Level          *string `json:"level,omitempty"`
+	DisplayMode    *string `json:"display_mode,omitempty"`
+	ShowPolicy     *string `json:"show_policy,omitempty"`
+	StartsAt       *string `json:"starts_at,omitempty"`
+	EndsAt         *string `json:"ends_at,omitempty"`
+	TargetType     *string `json:"target_type,omitempty"`
+	TargetPlatform *string `json:"target_platform,omitempty"`
+	MinVersionCode *int64  `json:"min_version_code,omitempty"`
+	MaxVersionCode *int64  `json:"max_version_code,omitempty"`
+	ActionText     *string `json:"action_text,omitempty"`
+	ActionURL      *string `json:"action_url,omitempty"`
+	TargetUserIDs  []int64 `json:"target_user_ids,omitempty"`
 }
 
 type CreateVersionRequest struct {
