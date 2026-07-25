@@ -12,8 +12,8 @@
 ## 2. 当前生产版本
 
 ```text
-version_name: 0.2.4
-version_code: 2026072401
+version_name: 0.2.6
+version_code: 2026072502
 platform: windows
 arch: win-x64
 ```
@@ -22,9 +22,9 @@ arch: win-x64
 
 | 字段 | 值 |
 |------|----|
-| 文件名 | `JDMonitor-0.2.4-win-x64.zip` |
-| 文件大小 | `134822980` 字节 |
-| SHA-256 | `bfdf42bde2095c5a1abb209117e65eefe883d902850d269843ccc4a85616e056` |
+| 文件名 | `JDMonitor-0.2.6-win-x64.zip` |
+| 文件大小 | `135163057` 字节 |
+| SHA-256 | `410dd15fde0c33e8837767828f1ec6dbad9fedcc92fe9e502e6514a793b2c9eb` |
 
 注意：重新构建同一版本会改变文件大小和哈希。后台登记必须以最终上传且不再修改的OSS对象为准，不能盲目复制本文数值。
 
@@ -37,6 +37,14 @@ chcp 65001
 $env:JDSHOP_API_BASE_URL = "https://api.jdshop.bbroot.com/api/v1"
 powershell -ExecutionPolicy Bypass -File .\scripts\build_portable.ps1
 ```
+
+v0.2.6 起，便携版必须将 `certifi/cacert.pem` 打包进启动器、服务和独立更新器三个 EXE。它们同时保留 Windows 系统根证书，并通过严格 TLS 上下文访问登录、版本查询和更新服务。发布前应使用 `pyi-archive_viewer` 检查三个 EXE 均包含：
+
+```text
+certifi\cacert.pem
+```
+
+不得通过关闭证书校验来规避问题。如果客户网络被企业代理或杀毒软件替换为自签名 HTTPS 证书，仍需在客户电脑中安装对应的企业根证书。
 
 构建结果：
 
@@ -53,7 +61,7 @@ release/update-feed-{version}.json
 推荐对象名：
 
 ```text
-JDMonitor-0.2.4-win-x64.zip
+JDMonitor-0.2.6-win-x64.zip
 ```
 
 规则：
@@ -78,7 +86,7 @@ https://bucket.oss-.../file.zip?Expires=...&OSSAccessKeyId=TMP...&Signature=...
 公开客户端发布包应使用不含查询参数的永久HTTPS地址，例如：
 
 ```text
-https://jdshop-client-releases-hk.oss-cn-hongkong.aliyuncs.com/JDMonitor-0.2.4-win-x64.zip
+https://jdshop-client-releases-hk.oss-cn-hongkong.aliyuncs.com/JDMonitor-0.2.6-win-x64.zip
 ```
 
 如果Bucket保持私有，则需要长期稳定的下载网关按请求生成新签名，不能把控制台一次性签名写入版本表。最简单的第一阶段方案是只对发布ZIP对象开放公共读，且Bucket内不存放私密资料。
@@ -89,7 +97,7 @@ Windows下载后：
 
 ```powershell
 chcp 65001
-$file = 'JDMonitor-0.2.4-win-x64.zip'
+$file = 'JDMonitor-0.2.6-win-x64.zip'
 (Get-Item -LiteralPath $file).Length
 (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
 ```
@@ -116,7 +124,7 @@ https://www.jdshop.bbroot.com/admin
 |------|------|
 | 平台 | `windows` |
 | 版本码 | `update-feed`中的严格递增整数 |
-| 版本名称 | 例如 `0.2.4` |
+| 版本名称 | 例如 `0.2.6` |
 | 标题 | 一句话概括用户可感知变化 |
 | 更新说明 | 分行说明新增、修复和注意事项 |
 | 下载地址 | OSS永久HTTPS地址，不含临时签名参数 |
@@ -153,16 +161,17 @@ runtime/logs/updater.log
 1. 解压发布ZIP，确认包含启动器、服务、更新器、`static/`、`manifest.json` 和面向客户的 UTF-8 `更新说明.txt`。
 2. 确认 `manifest.json` 的版本名称和版本码正确。
 3. 用临时端口启动发布版并确认 `/api/health` 返回新版本。
-4. 确认发布目录没有开发数据库、浏览器Profile、Cookie、日志和个人配置。
-5. 上传OSS后重新下载，复核字节数和SHA-256。
-6. 使用永久HTTPS地址，不使用带 `Expires` 的链接。
-7. 在管理台核对所有版本字段后再发布。
+4. 用 `pyi-archive_viewer` 确认三个 EXE 均包含 `certifi\cacert.pem`。
+5. 确认发布目录没有开发数据库、浏览器Profile、Cookie、日志和个人配置。
+6. 上传OSS后重新下载，复核字节数和SHA-256。
+7. 使用永久HTTPS地址，不使用带 `Expires` 的链接。
+8. 在管理台核对所有版本字段后再发布。
 
 ## 10. 发布后测试矩阵
 
 | 场景 | 预期 |
 |------|------|
-| 低版本检查 | 收到0.2.4元数据和正确说明 |
+| 低版本检查 | 收到0.2.6元数据和正确说明 |
 | 同版本检查 | `has_update=false`，不重复提示 |
 | 普通更新 | 可暂不更新，选择更新后显示完整进度 |
 | 强制更新 | 新启动器不允许取消或关闭 |
@@ -176,7 +185,7 @@ runtime/logs/updater.log
 
 ```bash
 curl 'https://api.jdshop.bbroot.com/api/v1/version/latest?platform=windows&current_version_code=2026072302'
-curl 'https://api.jdshop.bbroot.com/api/v1/version/latest?platform=windows&current_version_code=2026072401'
+curl 'https://api.jdshop.bbroot.com/api/v1/version/latest?platform=windows&current_version_code=2026072501'
 ```
 
 ## 11. 回退版本
