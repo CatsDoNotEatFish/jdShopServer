@@ -280,6 +280,8 @@ crontab -l
 
 当前模板改为管理接口 `300r/m + burst=100`、普通API `120r/m + burst=40`、登录接口 `5r/m + burst=3`，所有 `OPTIONS` 均不计数，超限返回带管理台CORS头的429 JSON。同步模板时执行：
 
+模板中的共享区使用 `admin_api_limit_v2`、`api_limit_v2`、`login_limit_v2`。这是为了兼容从旧配置热重载：Nginx 不允许同名共享区在 reload 时从 `$binary_remote_addr` 改成 `$api_limit_key`，否则主日志会出现 `zone uses a different key`，并继续运行旧配置。不要把名称改回旧共享区，除非安排了完整的Nginx重启窗口。
+
 ```bash
 install -o root -g root -m 0644 \
   /opt/jdshop/deploy/nginx-https.conf \
